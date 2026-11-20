@@ -127,11 +127,12 @@ RT_ON_RESET(input_rumble_reset) {
     input_rumble_permit(true);
 }
 
-// Controller light (runtime/led.h): the light bar of the game's controller shows Link's health. UI thread only.
-// While the option is off (or nothing is in play) SDL_SetGamepadLED is never called: the one call that hands the
-// light back is made when we stop owning it.
-int game_in_play(void);                // hle/warp.c
-int cheats_link_health(int *max);      // ui/cheats.mm
+// A window screenshot the test input asked for (LARECOMP_INPUT "shot"; runtime/nvn/vulkan/device.c takes it)
+char g_window_shot_request[256];
+
+// Controller light (runtime/led.h): the light bar of the game's controller can show the player's health. UI thread
+// only. While the option is off (or nothing is in play) SDL_SetGamepadLED is never called: the one call that hands
+// the light back is made when we stop owning it. (DKCR: no health source yet, so the light keeps its own colour.)
 static SDL_JoystickID led_pad_id;      // the pad the state below is about
 static bool led_capable, led_lit;      // it has an RGB light / we set its colour
 static LedColor led_last;
@@ -162,7 +163,7 @@ void input_led_poll(void) {
     }
     if (!led_capable) return;
     if (!g_settings.controller_light) { led_restore("off"); return; }
-    int max = 0, hp = game_in_play() ? cheats_link_health(&max) : -1;
+    int max = 0, hp = -1;  // (LAS read Link's hearts here; DKCR's health isn't known yet)
     if (hp < 0 || max <= 0) { led_restore("not in play"); return; }
     uint64_t now = SDL_GetTicks();
     if (led_prev_hp >= 0 && hp < led_prev_hp && max == led_prev_max) led_hurt_ms = now;
@@ -604,8 +605,7 @@ static void test_push(uint64_t frame, unsigned long start, unsigned long len, co
         }
         return;
     }
-    if (!strcmp(dev, "shot")) {
-        extern char g_window_shot_request[256];  // runtime/hle/hookshot.c
+    if (!strcmp(dev, "shot")) {  // (g_window_shot_request: runtime/nvn/vulkan/device.c takes the screenshot)
         if (frame == start) snprintf(g_window_shot_request, sizeof g_window_shot_request, "build/%s.png", arg);
         return;
     }
@@ -817,13 +817,6 @@ void input_frame(uint64_t frame) {
         }
         for (int i = 0; i < 16; i++) if (!strcmp(name, names[i])) b |= 1ull << i;
     }
-    {  // test hooks steering the stick (runtime/hle/doorjump.c LARECOMP_DOORJUMP_TEST)
-        extern int32_t g_test_lx, g_test_ly;
-        extern uint64_t g_test_stick_until;
-        if (frame < g_test_stick_until) { lx = g_test_lx; ly = g_test_ly; }
-        extern uint64_t g_test_buttons, g_test_buttons_until;  // (LARECOMP_PLACE action script)
-        if (frame < g_test_buttons_until) b |= g_test_buttons;
-    }
     script_buttons = b;
     script_lx = lx;
     script_ly = ly;
@@ -850,26 +843,6 @@ static void fill_state(Cpu *c) {
     static int nlog;
     if (nlog < 6 && (sampling % 600) == 1) { nlog++; LOG("[input] GetNpadState id %#x lr %llx\n", id, c->x[30]); }
     if (id != 0) return;  // docked: only player 1 (FullKey); Handheld stays disconnected
-    extern void warp_game_tick(Cpu *c);
-    warp_game_tick(c);  // game main thread, once per frame: apply a queued warp
-    { extern void give_item_tick(Cpu *c, uint64_t frame); extern uint64_t renderer_present_count(void);
-      give_item_tick(c, renderer_present_count());
-      extern void chamber_game_tick(Cpu *c, uint64_t frame);
-      chamber_game_tick(c, renderer_present_count());
-      extern void digs_game_tick(Cpu *c, uint64_t frame);
-      digs_game_tick(c, renderer_present_count());
-      extern void pot_bush_game_tick(Cpu *c, uint64_t frame);
-      pot_bush_game_tick(c, renderer_present_count());
-      extern void shell_spots_tick(Cpu *c, uint64_t frame);
-      shell_spots_tick(c, renderer_present_count());
-      extern void apple_trees_tick(Cpu *c, uint64_t frame);
-      apple_trees_tick(c, renderer_present_count());
-      extern void qol_tick(void);
-      qol_tick();
-      extern void run_timer_tick(void);
-      run_timer_tick();  // (run timer / LiveSplit: runtime/hle/run_timer.c)
-      extern void pets_game_tick(Cpu *c);
-      pets_game_tick(c); }
     extern uint64_t g_watch_lo, g_watch_hi;
     if (id == 0 && !g_pad_obj) g_pad_obj = c->x[1] - 8;
     if (id == 0 && !g_watch_lo && getenv("LARECOMP_WATCH_PAD")) {
@@ -902,37 +875,6 @@ static void fill_state(Cpu *c) {
     touch_stick(&tlx, &tly);
     int32_t lx = clamp_axis((menu ? 0 : key_lx + pad_lx + tlx) + script_lx), ly = clamp_axis((menu ? 0 : key_ly + pad_ly + tly) + script_ly);
     int32_t rx = clamp_axis((menu ? 0 : key_rx + pad_rx) + script_rx), ry = clamp_axis((menu ? 0 : key_ry + pad_ry) + script_ry);
-    if (!menu) {  // d-pad items (setting): the Items page assigns, play uses (runtime/hle/dpad_items.c; before mirroring:
-        extern uint64_t dpad_items_input(uint64_t b);  // the d-pad as held)
-        b = dpad_items_input(b);
-    }
-    extern bool mirror_input(void);  // mirror mode, the world on screen (runtime/hle/mirror.c): left and right swap
-    bool mirrored = !menu && mirror_input();
-    if (mirrored) {
-        lx = -lx;
-        uint64_t l = (b >> BTN_LEFT) & 1, r = (b >> BTN_RIGHT) & 1;
-        b = (b & ~((1ull << BTN_LEFT) | (1ull << BTN_RIGHT))) | (l << BTN_RIGHT) | (r << BTN_LEFT);
-    }
-    // d-pad / arrow keys walk (setting) while the stick is at rest. "At rest" has a dead zone: a controller's stick
-    // never reads exactly 0 (a DualSense rests at a few hundred), which used to turn the d-pad off altogether.
-    if (!menu && g_settings.dpad_mode == DPAD_MOVE && (int64_t)lx * lx + (int64_t)ly * ly < 8000ll * 8000) {
-        uint64_t d = key_buttons | pad_buttons | script_buttons;
-        int dx = (int)((d >> BTN_RIGHT) & 1) - (int)((d >> BTN_LEFT) & 1);
-        if (mirrored) dx = -dx;
-        int dy = (int)((d >> BTN_UP) & 1) - (int)((d >> BTN_DOWN) & 1);
-        int32_t m = dx && dy ? 23170 : 32767;  // diagonals: same speed (32767 / sqrt 2)
-        if (dx || dy) lx = dx * m, ly = dy * m;
-    }
-    {   // door jumps stop Link for a moment before moving him (runtime/hle/doorjump.c): stick + d-pad released
-        extern int32_t g_stick_lx, g_stick_ly;  // (what the player holds, before that: doorjump.c reads it)
-        g_stick_lx = lx, g_stick_ly = ly;
-        extern uint64_t g_stick_freeze_until;
-        extern uint64_t renderer_present_count(void);
-        if (renderer_present_count() < g_stick_freeze_until) {
-            lx = ly = 0;
-            b &= ~(0xfull << 12);
-        }
-    }
     // stick directions also appear as buttons (bits 16-23)
     if (lx < -16000) b |= 1ull << 16;
     if (ly > 16000) b |= 1ull << 17;
@@ -942,23 +884,12 @@ static void fill_state(Cpu *c) {
     if (ry > 16000) b |= 1ull << 21;
     if (rx > 16000) b |= 1ull << 22;
     if (ry < -16000) b |= 1ull << 23;
-    {   // the pause menu's companion slot (runtime/hle/pets.c) takes the d-pad / sticks / A while the cursor is on it
-        extern uint64_t pets_menu_input(uint64_t b, int32_t st[4]);
-        int32_t st[4] = {lx, ly, rx, ry};
-        b = pets_menu_input(b, st);
-        // the check tracker drives the Map page in randomizer seeds (runtime/ui/tracker_overlay.mm): its cursor takes
-        // the d-pad / left stick / A / Y (and B while one of its panels is open)
-        extern uint64_t tracker_map_input(uint64_t b, int32_t st[4]);
-        b = tracker_map_input(b, st);
-        lx = st[0], ly = st[1], rx = st[2], ry = st[3];
-    }
     *(uint64_t *)(s + 8) = b;
     static uint64_t last_b;
     if (b != last_b && getenv("LARECOMP_INPUT")) LOG("[input] id %#x buttons %#llx (sampling %lld, lr %llx)\n", id, (unsigned long long)b, (long long)sampling, c->x[30]);
     last_b = b;
     *(int32_t *)(s + 16) = lx;
     *(int32_t *)(s + 20) = ly;
-    { extern void input_note_rstick(int32_t ry); input_note_rstick(ry); }
     *(int32_t *)(s + 24) = rx;
     *(int32_t *)(s + 28) = ry;
     *(uint32_t *)(s + 32) = 1;  // IsConnected

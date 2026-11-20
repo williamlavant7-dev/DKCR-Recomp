@@ -44,31 +44,17 @@ extern "C" {
 #include "../menu_sfx.h"
 #include "menu.h"
 void input_reset(void);
-void save_editor_draw(float scale);  // save_editor.mm
-extern "C" int game_in_play(void);  // hle/warp.c
-void save_editor_on_open(void);
-void rando_tab_draw(float scale);
-bool warp_tab_draw(float scale);  // warp_tab.mm: true when a warp started
-bool warp_tab_close_pressed(void);  // warp_tab.mm (touch screens: the X is in its map pane)
-bool save_editor_close_pressed(void);  // save_editor.mm (the same, in its right pane)
-bool rando_tab_close_pressed(void);  // rando_tab.mm (the same: its right pane, or the corner over its seed sheet)
-extern "C" void cheats_draw(float scale);  // cheats.mm
-extern "C" void difficulty_draw(float scale);  // difficulty.mm
-extern "C" void general_draw(float scale);     // difficulty.mm
+extern "C" int game_in_play(void);  // hle/game_state.c
+void input_apply_background(void);  // hle/input.c (the General tab's Allow background inputs)
 void controls_tab_draw(float scale);  // controls_ui.mm
 void touch_tab_draw(float scale);     // controls_ui.mm (touch screens)
 bool controls_ui_took_back(void);
-bool rando_tab_took_back(void);  // rando_tab.mm: B went back a step in the right column
-bool save_editor_took_back(void);  // save_editor.mm (the same)
-bool warp_tab_took_back(void);  // warp_tab.mm (the same)
 #include "../input_bind.h"
-#include "../livesplit.h"
 #include "../paths.h"
 #include "../platform.h"
 #if PLAT_TOUCH
 #include "mobile/touch_safe.h"
 #endif
-#include "../rando.h"
 }
 
 // ------------------------------------------------------------------ state shared with the main thread
@@ -116,9 +102,8 @@ static void set_open(bool open);
 // The menu in game: a bar drops down from the top over the game, its entries in a row (the one the cursor is on lit),
 // a close X at its right end; each entry opens its page in a window under it. The start screen's Settings is
 // launcher.mm's.
-// (Cosmetics and Cheats left the Settings tabs for entries of their own: Cosmetics by Settings, Cheats by the Save
-// Editor - user 2026-11-11)
-enum { BAR_SETTINGS, BAR_COSMETICS, BAR_RANDO, BAR_WARP, BAR_EDITOR, BAR_CHEATS, BAR_RESET, BAR_QUIT, BAR_CLOSE, BAR_N };
+// (LAS's Cosmetics, Randomizer, Warp, Save Editor and Cheats entries went with its features)
+enum { BAR_SETTINGS, BAR_RESET, BAR_QUIT, BAR_CLOSE, BAR_N };
 static std::atomic<int> g_page{-1};  // the entry whose page is open (-1: the bar alone)
 static int g_bar_cur;  // the bar's cursor (render thread)
 static void page_open(int page);
@@ -129,18 +114,16 @@ static int g_shown_tab = -1000;  // the page drawn last (its id)
 extern "C" void menu_test_open(void) {
     set_open(true);
     // (test) LARECOMP_MENU_BAR=<entry>: the bar alone, its cursor on that entry. Otherwise a page, as before the bar:
-    // LARECOMP_MENU_TAB=4 Warp, 2 Save Editor, 3 Randomizer, 5 Cheats, 7 Cosmetics, 9 Quit, 10 Reset, any other a
-    // Settings tab
+    // LARECOMP_MENU_TAB=9 Quit, 10 Reset, any other a Settings tab
     if (getenv("LARECOMP_MENU_NOTICE")) menu_save_failed(getenv("LARECOMP_SAVE_DIR"));  // (test: the failed-save notice)
     if (getenv("LARECOMP_MENU_BAR")) { g_bar_cur = atoi(getenv("LARECOMP_MENU_BAR")) % BAR_N; return; }
     int t = getenv("LARECOMP_MENU_TAB") ? atoi(getenv("LARECOMP_MENU_TAB")) : -1;
-    int page = t == 4 ? BAR_WARP : t == 2 ? BAR_EDITOR : t == 3 ? BAR_RANDO : t == 5 ? BAR_CHEATS : t == 7 ? BAR_COSMETICS
-             : t == 9 ? BAR_QUIT : t == 10 ? BAR_RESET : BAR_SETTINGS;
+    int page = t == 9 ? BAR_QUIT : t == 10 ? BAR_RESET : BAR_SETTINGS;
     page_open(page);
     if (t >= 0 && page == BAR_SETTINGS) { extern int g_tab_request_ext; g_tab_request_ext = t; }
     // (test) LARECOMP_PREVIEW=<row label>: that row's live preview opens straight away (its page: LARECOMP_MENU_TAB)
     if (const char *row = getenv("LARECOMP_PREVIEW")) {
-        if (t >= 0) g_tab = g_shown_tab = t;  // (a page alone - the bar's Cosmetics - previews the page drawn last)
+        if (t >= 0) g_tab = g_shown_tab = t;
         preview_open(row, -1);
     }
 }
@@ -181,10 +164,6 @@ static void page_open(int page) {
         menu_tabs_focus(!opened);  // selected one
         opened = true;
     } else menu_tabs_focus(false);  // (a page alone: the first Down goes to its first row)
-    // (Warp, the Save Editor and Cheats need a save: before one is loaded, a note over the bar instead of an empty
-    // page - on a touch screen the empty Save Editor had no X to leave by)
-    if ((page == BAR_WARP || page == BAR_EDITOR || page == BAR_CHEATS) && !game_in_play()) { g_ask = page; return; }
-    if (page == BAR_EDITOR) save_editor_on_open();
     if (page == BAR_RESET || page == BAR_QUIT) { g_ask = page; return; }  // (a question over the bar: ask_popup)
     g_page = page;
 }
@@ -850,15 +829,7 @@ static void tab_display(void) {
     opt_end();
 }
 
-extern "C" bool cosmetics_seed_on(void);      // runtime/cosmetics_seed.c
-extern "C" void cosmetics_seed_apply(void);
-extern "C" bool weather_cycle_on(void);       // runtime/nvn/weather_cycle.c
-
-// Cosmetics: tunic / heart colours, live (runtime/nvn/texpatch.c), and recolours by draw (runtime/nvn/recolour*.c);
-// a seed made with "Random cosmetics" puts its own set into the rows the first time it's played (cosmetics_seed.c),
-// and they stay the player's to change: "Seed's look" puts the seed's back, "Default all" the game's own
-// Touch screens, the bar's Cosmetics and Cheats: called right after opt_begin, as the Randomizer's right pane
-// (rando_tab.mm pane_heading): the page's own X at the top right of the rows' panel with the page's name on its line
+// Touch screens, a page of the bar's own: called right after opt_begin: the page's own X at the top right of the rows' panel with the page's name on its line
 // (a title for the whole page, as the Randomizer's column headings: the sections scroll under it), then the rows in a
 // list that scrolls on its own (the panel itself doesn't, so the X stays). The X in the screen's corner was under the
 // panel. True when the head was drawn: the caller closes the list (opt_list_end) before opt_end.
@@ -881,78 +852,6 @@ extern "C" bool menu_page_head(const char *title, float scale) {
 #endif
 }
 
-static void tab_cosmetics(void) {
-    float cs = ImGui::GetFontSize() / 34;
-    opt_begin("##cosmetics", cs);
-    bool head = menu_page_head("Cosmetics", cs);
-    opt_section("General");
-    CosColour *rows[] = {&g_settings.tunic, &g_settings.hearts, &g_settings.hair, &g_settings.skin, &g_settings.shield,
-                         &g_settings.leaves, &g_settings.grass, &g_settings.sand, &g_settings.water,
-                         &g_settings.fences, &g_settings.walls, &g_settings.houses};
-    if (opt_button("Randomize all", "Picks a random color for everything below."))
-        for (int i = 0; i < COL_SLOTS; i++)  // (a named colour the row offers: shown as what it is)
-            rows[i]->pick = col_random_pick(i, (unsigned)rand());
-    if (opt_button("Default all", "Puts everything on this page back to the game's normal look.")) {
-        for (CosColour *c : rows) c->pick = COL_DEFAULT;
-        g_settings.enemy_colours = 0;
-        g_settings.screen_filter = 0;
-        g_settings.weather = 0;
-    }
-    if (cosmetics_seed_on() && opt_button("Seed's look", "Puts everything on this page back to this seed's look."))
-        cosmetics_seed_apply();
-    opt_section("Colors");
-    opt_colour("Tunic color", &g_settings.tunic, COL_SLOT_TUNIC, "Link's tunic color.");
-    opt_colour("Heart color", &g_settings.hearts, COL_SLOT_HEARTS, "The color of the hearts on the HUD.");
-    opt_colour("Hair color", &g_settings.hair, COL_SLOT_HAIR, "Link's hair color.");
-    opt_colour("Body color", &g_settings.skin, COL_SLOT_SKIN, "Link's body color.");  // (larecomp.ini: skin)
-    opt_colour("Shield color", &g_settings.shield, COL_SLOT_SHIELD, "The color of Link's shield.");
-    opt_section("Overworld");
-    {   // Season: fills Leaves, Grass and Sand at once (palette: Orange 2, Gold 3, Pink 9, White 10; Water stays out: it
-        // has no season, and white water would read as ice; nor fences, walls or houses: wood and stone have none);
-        // "Mixed" when they match none
-        static const char *const names[] = {LN("Spring"), LN("Autumn"), LN("Winter"),
-                                             LN("Cherry blossom"), LN("Mixed")};
-        static const int preset[4][3] = {{COL_DEFAULT, COL_DEFAULT, COL_DEFAULT}, {2, 3, 3}, {10, 10, 10},
-                                         {9, COL_DEFAULT, COL_DEFAULT}};
-        int cur = 4;
-        for (int i = 0; i < 4; i++)
-            if (g_settings.leaves.pick == preset[i][0] && g_settings.grass.pick == preset[i][1] &&
-                g_settings.sand.pick == preset[i][2])
-                cur = i;
-        int v = cur;
-        // (Mixed is never chosen: it's there only while the colours match no season; Right stops at Cherry blossom)
-        if (opt_choice("Season", &v, names, cur == 4 ? 5 : 4, 0, "Sets the leaves, grass and sand colors below.") && v != cur) {
-            g_settings.leaves.pick = preset[v][0];
-            g_settings.grass.pick = preset[v][1];
-            g_settings.sand.pick = preset[v][2];
-        }
-    }
-    opt_colour("Leaves color", &g_settings.leaves, COL_SLOT_LEAVES, "The overworld's tree leaves and bushes.");
-    opt_colour("Grass color", &g_settings.grass, COL_SLOT_GRASS, "The overworld's grass.");
-    opt_colour("Sand color", &g_settings.sand, COL_SLOT_SAND, "The beaches, the desert and other sandy ground.");
-    opt_colour("Water color", &g_settings.water, COL_SLOT_WATER, "The sea, rivers, ponds, waterfalls and dungeon water.");
-    opt_colour("Fence color", &g_settings.fences, COL_SLOT_FENCES, "The wooden fences.");
-    opt_colour("Wall color", &g_settings.walls, COL_SLOT_WALLS, "The overworld's cliff walls and ledges.");
-    opt_colour("House color", &g_settings.houses, COL_SLOT_HOUSES, "The roofs of the village houses.");
-    opt_section("Enemies");
-    opt_choice("Enemy colors", &g_settings.enemy_colours, g_enemy_colour_modes, N_ENEMY_COLOUR_MODES, 0,
-               "Gives each kind of enemy a new color. Enemies whose color shows how strong they are keep theirs.");
-    opt_section("Screen");
-    opt_preview("Screen filter", &g_settings.screen_filter, g_screen_filters, N_SCREEN_FILTERS, 0,
-               "Puts a filter over the whole screen, HUD included.");
-    {   // (the seed's weather cycle: "Seed", the seed's weather - locked; Metal and Vulkan both draw it: weather_vk.c)
-        const char *names[N_WEATHERS];
-        for (int i = 0; i < N_WEATHERS; i++) names[i] = g_weathers[i];
-        bool cycle = weather_cycle_on();
-        int shown = 0;
-        if (cycle) names[0] = LN("Seed"), opt_disable_next();
-        opt_choice("Weather", cycle ? &shown : &g_settings.weather, names, N_WEATHERS, 0,
-                   cycle ? "This seed picked the weather. Commit to it!" : "Rain, snow, a storm or a blizzard on the overworld.");
-    }
-    if (head) opt_list_end();
-    opt_end();
-}
-
 static void tab_audio(void) {
     opt_begin("##audio", ImGui::GetFontSize() / 34);
     opt_section("Volume");
@@ -964,13 +863,9 @@ static void tab_audio(void) {
                "Stereo for speakers and headphones. 5.1 sends the game's surround mix to a 5.1 system.");
     opt_toggle("Movie audio", &g_settings.movie_audio, true,
                "Sound in the opening and ending movies. Changes the next time a movie plays.");
-    opt_toggle("Power-up music", &g_settings.powerup_music, true,
-               "Guardian Acorn and Piece of Power music. Off: keep the area's music. Both items still work.");
     opt_section("Effects");
     opt_toggle("Enable reverb", &g_settings.reverb, true,
                "The game's echo in caves, dungeons and big rooms.");
-    opt_toggle("LAS Recomp menu sounds", &g_settings.menu_sounds, true,
-               "Sounds when you move around and pick things in LAS Recomp's menus.");
     opt_end();
 }
 
@@ -986,20 +881,6 @@ static void ask_popup(float scale) {
     if (!ImGui::BeginPopupModal("##ask", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar |
                                                    ImGuiWindowFlags_NoMove))
         return;
-    if (g_ask == BAR_WARP || g_ask == BAR_EDITOR || g_ask == BAR_CHEATS) {  // (no save loaded: page_open)
-        const char *note = L("Load a save first.");
-        ImGui::TextUnformatted(note);
-        ImGui::Spacing();
-        // (the whole width: the note's, the popup sizes itself to it)
-        if (ImGui::Button(L("OK"), ImVec2(fmaxf(ImGui::CalcTextSize(note).x, 200 * scale), 0)) || ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) ||
-            ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
-            menu_sfx_play(MENU_SFX_CANCEL);
-            g_ask = -1, ImGui::CloseCurrentPopup();
-        }
-        ImGui::SetItemDefaultFocus();
-        ImGui::EndPopup();
-        return;
-    }
     bool quit = g_ask == BAR_QUIT;
     // LARECOMP_MENU_ASK=cancel / launcher / reset (test): presses that button a few frames after the question opens
     static const char *test = getenv("LARECOMP_MENU_ASK");
@@ -1108,37 +989,19 @@ static void notice_popup(float scale) {
     ImGui::EndPopup();
 }
 
-// Reset to vanilla (the round arrow beside the close X): the game as Nintendo made it - 16:9, the General and Gameplay
-// tabs (but the language, Hero Mode icon and LiveSplit address), Cheats and Cosmetics at their defaults; Video / Audio
-// otherwise and the controls stay. A seed being played ends: the game boots again without it (as the Randomizer tab's
-// Switch to vanilla). On the start screen (in_game false) nothing runs yet: its caller drops the seed PLAY would start
-// (menu_reset_corner).
+// Reset to vanilla (the round arrow beside the close X): the game as Nintendo made it - 16:9 and no screen filter;
+// Video / Audio otherwise and the controls stay.
 static void reset_to_vanilla(bool in_game) {
     Settings &s = g_settings;
     s.aspect = ASPECT_ORIGINAL;
-    s.cheat_hookshot = s.no_buff_drops = s.mirror_mode = false;
-    s.walk_speed = 1.0f, s.walk_speed_dungeons = false;
-    s.text_speed = TEXT_SPEED_NORMAL;
-    s.diff_damage = 1.0f, s.diff_ohko = false;
-    s.timer = false, s.timer_pos = TIMER_POS_LEFT;
-    if (s.livesplit) s.livesplit = false, livesplit_poke();
-    s.cheat_hearts = s.cheat_ammo = s.cheat_rupees = false;
-    for (CosColour *c : {&s.tunic, &s.hearts, &s.hair, &s.skin, &s.shield, &s.leaves, &s.grass, &s.sand, &s.water,
-                         &s.fences, &s.walls, &s.houses})
-        c->pick = COL_DEFAULT;
-    s.enemy_colours = 0, s.screen_filter = 0;
-    LOG("[menu] reset to vanilla%s\n", !in_game ? " (start screen)" : rando_seed_dir() ? " (leaving the seed)" : "");
+    s.screen_filter = 0;
+    LOG("[menu] reset to vanilla%s\n", !in_game ? " (start screen)" : "");
     settings_save();
-    if (in_game && rando_seed_dir()) {
-        rando_select("");
-        rt_request_reboot(RT_REBOOT_GAME);
-        set_open(false);
-    }
 }
 
-// seed: a seed would be left (the one being played, or on the start screen the one PLAY would start). True when Reset
-// was pressed.
+// (seed: LAS's randomizer seed being left; DKCR has none.) True when Reset was pressed.
 static bool vanilla_popup(float scale, bool seed, bool in_game) {
+    (void)seed;
     // LARECOMP_MENU_VANILLA=ask / reset / cancel (test): the question opens with the menu; reset / cancel press that
     // button a few frames later
     static const char *test = getenv("LARECOMP_MENU_VANILLA");
@@ -1153,10 +1016,6 @@ static bool vanilla_popup(float scale, bool seed, bool in_game) {
     ImGui::PopFont();
     ImGui::Spacing();
     ImGui::TextUnformatted(L("This resets your settings to the vanilla game experience.\nYour controls stay as they are."));
-    if (seed) {
-        ImGui::Spacing();
-        ImGui::TextUnformatted(L("This also ends the current randomizer seed.\nIts save files are kept."));
-    }
     ImGui::Spacing();
     ImGui::Spacing();
     ImVec2 bs(220 * scale, 0);
@@ -1179,22 +1038,6 @@ static bool vanilla_popup(float scale, bool seed, bool in_game) {
     return reset;
 }
 
-extern "C" bool inventory_overlay_wanted(void);
-extern "C" bool tracker_overlay_wanted(void);
-extern "C" bool tracker_dungeon_wanted(void);
-extern "C" void tracker_dungeon_draw(ImVec2 display, ImFont *font);
-extern "C" void tracker_overlay_draw(ImVec2 display, ImFont *font);
-extern "C" bool chaos_overlay_wanted(void);
-extern "C" void chaos_overlay_draw(ImVec2 display, ImFont *font);
-extern "C" void inventory_overlay_draw(ImVec2 display, ImFont *font);
-extern "C" bool race_overlay_wanted(void);
-extern "C" void race_overlay_draw(ImVec2 display, ImFont *font, float scale);
-extern "C" bool pickup_flyin_wanted(void);  // (silent pickups: pickup_flyin.mm)
-extern "C" void pickup_flyin_draw(ImVec2 display, ImFont *font, float scale);
-extern "C" bool race_overlay_key(char *out, size_t cap);
-extern "C" bool dpad_overlay_wanted(void);  // (d-pad items' HUD cross: dpad_overlay.mm)
-extern "C" void dpad_overlay_key(char *out, size_t cap);
-extern "C" void dpad_overlay_draw(ImVec2 display, ImFont *font, float scale);
 
 // ---- reusing the overlay's last drawing (LARECOMP_OVERLAY_CACHE=0: off, a new ImGui frame every present as before)
 // While only the FPS counter and / or the run timer are up (no menu, no input, nothing interactive or animated), the
@@ -1348,14 +1191,44 @@ static void focus_check(bool down, bool up, bool any_down, int focused_tab, int 
         from >= 0 ? opt_row_label(from) : "the tab bar", got, exp, ok ? "OK" : "FAIL");
 }
 
-// The tab bar and its pages, into the current window: the in-game menu, and the start screen's Settings (in_game
+// The General tab: the language and the window's behaviour (LAS's General tab less its Link's Awakening rows: text
+// speed, blur, the Hero Mode icon, the speedrun timer and LiveSplit)
+static void general_draw(float scale) {
+    opt_begin("##general", scale);
+    opt_section("General");
+    {
+        // what the game is told the console's language is: its text follows this (runtime/settings.c), and the menus
+        // at once. Each language by its own name (the row leaves names it has no translation for as they are). The
+        // menus' own languages (pt-BR) have no game text: the game stays English.
+        const char *code = settings_menu_language(), *auto_name = "English";
+        for (int i = 1; i < N_LANGUAGES; i++)
+            if (!strcmp(code, g_language_codes[i])) auto_name = g_language_endonyms[i];
+        char autol[64];
+        snprintf(autol, sizeof autol, L("Auto (%s)"), auto_name);
+        const char *names[N_LANGUAGES];
+        names[0] = autol;
+        for (int i = 1; i < N_LANGUAGES; i++) names[i] = g_language_endonyms[i];
+        bool menus_only = strcmp(code, "en-US") && !strcmp(settings_language(), "en-US");
+        if (opt_choice("Language", &g_settings.language, names, N_LANGUAGES, LANG_AUTO,
+                       menus_only ? "The language of the menus. The game has no text in this language, so it stays English."
+                                  : "The language of the menus and the game's text. The game's text changes after a restart."))
+            settings_save();
+    }
+    if (!PLAT_TOUCH && opt_toggle("Pause on focus lost", &g_settings.pause_unfocused, false,
+                                  "The game pauses while its window isn't in front."))
+        settings_save();
+    if (!PLAT_TOUCH && opt_toggle("Allow background inputs", &g_settings.bg_input, false,
+                                  "Controllers keep working while another window is in front. macOS may ask for Input "
+                                  "Monitoring permission."))
+        input_apply_background(), settings_save();
+    opt_end();
+}
+
 // The live preview (live_preview.h) of a row on the page shown: instead of the tabs, until it closes. The pages with
-// opt_preview rows: Video, Cosmetics, General (Remove blur).
+// opt_preview rows: Video.
 static float g_preview_scale = 1;
 static void preview_page(void) {
-    // (the page drawn last: the bar's Cosmetics is a page alone, which leaves g_tab as Settings had it)
     if (g_shown_tab == 0) tab_display();
-    else if (g_shown_tab == 7) tab_cosmetics();
     else if (g_shown_tab == 11) general_draw(ImGui::GetFontSize() / 34);  // (as tab_display's scale)
 #if PLAT_TOUCH
     else if (g_tab == 10) touch_tab_draw(g_preview_scale);
@@ -1463,15 +1336,13 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float), int o
     static const char *names[] = {LN("Video"), LN("Audio"), LN("Save Editor"), LN("Randomizer"), LN("Warp"),
                                   LN("Cheats"), LN("Gameplay"), LN("Cosmetics"), PLAT_TOUCH ? LN("Controller") : LN("Controls"), LN("Quit"),
                                   LN("Touch"), LN("General")};
-    // General, Controls, Video, Audio, Gameplay (ids stay: test hooks; General leads, after the start screen's System -
-    // user 2026-11-11). Warp, Save Editor and Quit are the in-game menu bar's own entries (only usable in a save - user
-    // 2026-11-03); the Randomizer is the bar's entry in game and its own row on the start screen (user 2026-11-09);
-    // Cosmetics and Cheats are the bar's entries too, and not on the start screen (user 2026-11-11). Touch screens:
-    // Touch after General
+    // General, Controls, Video, Audio (ids stay: test hooks; General leads, after the start screen's System). Quit is
+    // the in-game menu bar's own entry. LAS's Save Editor, Randomizer, Warp, Cheats, Gameplay and Cosmetics went with
+    // its features (their ids stay unused). Touch screens: Touch after General
 #if PLAT_TOUCH
-    static const int order[] = {11, 10, 8, 0, 1, 6};
+    static const int order[] = {11, 10, 8, 0, 1};
 #else
-    static const int order[] = {11, 8, 0, 1, 6};
+    static const int order[] = {11, 8, 0, 1};
 #endif
     int keep_tab = g_tab;  // (one page alone: the Settings window's tab stays as it was)
     if (only != -1000) tabs[ntabs++] = {names[only], only, true}, g_tab = only;
@@ -1648,16 +1519,7 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float), int o
         case -1: prelaunch(scale); break;
         case 0: tab_display(); break;
         case 1: tab_audio(); break;
-        case 2:
-            if (game_in_play()) save_editor_draw(scale);
-            else ImGui::TextDisabled("%s", L("Load a save to edit it."));
-            break;
-        case 3: rando_tab_draw(scale); break;
-        case 4: if (warp_tab_draw(scale)) set_open(false); break;
-        case 5: cheats_draw(scale); break;
-        case 6: difficulty_draw(scale); break;
         case 11: general_draw(scale); break;
-        case 7: tab_cosmetics(); break;
         case 8: controls_tab_draw(scale); break;
 #if PLAT_TOUCH
         case 10: touch_tab_draw(scale); break;
@@ -1726,8 +1588,7 @@ bool menu_reset_corner(float bx, float scale, ImFont *font, ImFont *font_big, bo
 // stick, arrows, L / R, Q / E) move the cursor, A / Enter opens the entry, B / Esc closes the menu. The mouse lights
 // the entry under it, a click opens it (the page is drawn from the next frame: the press that opened it isn't the
 // page's too).
-static const char *g_bar_names[BAR_N] = {LN("Settings"), LN("Cosmetics"), LN("Randomizer"), LN("Warp"), LN("Save Editor"),
-                                         LN("Cheats"), LN("Reset"), LN("Quit"), ""};
+static const char *g_bar_names[BAR_N] = {LN("Settings"), LN("Reset"), LN("Quit"), ""};
 // an entry's tab at x, y (w x ph), its name in the current font at size fs
 static void bar_entry(ImDrawList *dl, float x, float y, float w, float ph, float pad, float fs, bool sel, bool hot,
                       const char *name, float scale) {
@@ -2038,12 +1899,8 @@ static void perf_overlay(float scale) {
     ImGui::PopStyleVar(3);
 }
 
-// Whether menu_render draws anything: the menu, the keyboard, an overlay (FPS, inventory, tracker, chaos, race, a
-// pickup card, the d-pad cross, the touch controls).
-static bool render_needed(bool open, bool kbd, bool inv, bool trk, bool trkd, bool chaos, bool race, bool flyin, bool dpad,
-                          bool touch) {
-    return open || kbd || g_settings.show_fps || inv || trk || trkd || chaos || race || flyin || dpad || touch;
-}
+// Whether menu_render draws anything: the menu, the keyboard, an overlay (FPS, the touch controls).
+static bool render_needed(bool open, bool kbd, bool touch) { return open || kbd || g_settings.show_fps || touch; }
 
 #ifdef __APPLE__
 void menu_render(id<MTLDevice> dev, id<MTLCommandBuffer> cb, id<MTLTexture> target) {
@@ -2054,14 +1911,7 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
 #endif
     notice_take();  // (a save failed: the menu opens with it)
     bool open = g_open.load();
-    bool inv = !open && inventory_overlay_wanted();
-    bool trk = !open && tracker_overlay_wanted();
-    bool trkd = !open && tracker_dungeon_wanted();
-    bool chaos = !open && chaos_overlay_wanted();
     bool kbd = g_kbd.load() == 1;
-    bool race = race_overlay_wanted();  // (run timer, race seed hash: race_overlay.mm)
-    bool flyin = pickup_flyin_wanted() && !open;  // (a silent pickup's card)
-    bool dpad = !open && dpad_overlay_wanted();
 #ifdef __APPLE__
     plastic_perf_note(cb, open);  // (LARECOMP_UI_PERF test only)
 #else
@@ -2072,7 +1922,7 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
     // (the stick / D-pad takes the thumb on the Movement row's preview only: on the others the panel may sit over it)
     touch_preview_play(PLAT_TOUCH && open && preview_active() && g_tab == 10 && g_settings.touch_mode != 2 &&
                        !strcmp(preview_label(), "Movement"));
-    if (!render_needed(open, kbd, inv, trk, trkd, chaos, race, flyin, dpad, touch)) {
+    if (!render_needed(open, kbd, touch)) {
         if (g_inited) { pthread_mutex_lock(&q_lock); q_events.clear(); pthread_mutex_unlock(&q_lock); }
         g_ov_same = 0;  // (shown again: built afresh first)
         return;
@@ -2097,20 +1947,16 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
     key[0] = 0;
     if (g_ov_cache) {
         fps_note(now, io.DeltaTime);
-        char rk[64], dk[160] = "";
-        // (only the FPS counter, the run timer and the d-pad cross; input only reaches ImGui while the menu or the name
-        // entry is up)
+        // (only the FPS counter; input only reaches ImGui while the menu or the name entry is up)
         // (not the advanced overlay: it changes every frame)
-        if (!open && !kbd && !inv && !trk && !trkd && !chaos && !flyin && !touch && !(g_settings.show_fps && g_settings.fps_advanced) &&
-            race_overlay_key(rk, sizeof rk)) {
+        if (!open && !kbd && !touch && !(g_settings.show_fps && g_settings.fps_advanced)) {
             pthread_mutex_lock(&q_lock);
             bool events = !q_events.empty();
             pthread_mutex_unlock(&q_lock);
-            if (dpad) dpad_overlay_key(dk, sizeof dk);
             int rw = 0, rh = 0;  // (Dynamic: the render size shown with the frame rate)
             if (g_settings.show_fps && g_settings.dyn_res) output_scale_render_size(&rw, &rh);
-            if (!events) snprintf(key, sizeof key, "%.0fx%.0f fps %d %.0f %dx%d | %s | %s", tw, th, (int)g_settings.show_fps,
-                                  g_settings.show_fps ? g_fps_shown : 0.0, rw, rh, rk, dk);
+            if (!events) snprintf(key, sizeof key, "%.0fx%.0f fps %d %.0f %dx%d", tw, th, (int)g_settings.show_fps,
+                                  g_settings.show_fps ? g_fps_shown : 0.0, rw, rh);
         }
         ImDrawData *dd = ImGui::GetDrawData();
         if (key[0] && g_ov_same >= 3 && !strcmp(key, g_ov_key) && dd && dd->Valid) {
@@ -2190,15 +2036,6 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
         else fps_box(scale);
     }
 
-    if (race) race_overlay_draw(io.DisplaySize, g_menu_font_big, scale);
-    if (dpad) dpad_overlay_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont(), scale);
-    if (flyin) pickup_flyin_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont(), scale);
-    if (trk) tracker_overlay_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-    if (chaos) chaos_overlay_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-    if (trkd) tracker_dungeon_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-    if (inv) {
-        inventory_overlay_draw(io.DisplaySize, g_font_big ? g_font_big : ImGui::GetFont());
-    }
     if (touch) touch_draw(ImGui::GetBackgroundDrawList(), io.DisplaySize.x, io.DisplaySize.y, g_font_big ? g_font_big : ImGui::GetFont(),
                           g_menu_font_big ? g_menu_font_big : ImGui::GetFont());
 
@@ -2254,11 +2091,9 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
             // header as on the start screen's Settings: the page's title, and a close X in the corner (B / Esc too:
             // back to the bar). ("Title screen" - rt_request_reboot(RT_REBOOT_TITLE) - is to find a new home; user
             // 2026-10-11.)
-            static const char *titles[] = {LN("Settings"), LN("Cosmetics"), LN("Randomizer"), LN("Warp"), LN("Save Editor"),
-                                           LN("Cheats")};
-            static const int only[] = {-1000, 7, 3, 4, 2, 5};  // (the pages' tab ids)
-            bool pane_x = page == BAR_RANDO || page == BAR_WARP || page == BAR_EDITOR || page == BAR_COSMETICS ||
-                          page == BAR_CHEATS;  // (touch: their X is in a pane, or on the page's first line: menu_page_head)
+            static const char *titles[] = {LN("Settings")};
+            static const int only[] = {-1000};  // (the pages' tab ids)
+            bool pane_x = false;  // (touch: a page whose X is in a pane: none since LAS's pages went)
 #if PLAT_TOUCH
             // (an icon for the title; Settings': tabs_body)
             float page_indent = page != BAR_SETTINGS ? menu_page_corner(only[page], scale) : 0;
@@ -2273,25 +2108,21 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
                 if (!(PLAT_TOUCH && pane_x) && plastic_close_corner(bx, scale)) back = true;
                 if (page == BAR_SETTINGS) {
                     if (plastic_reset_corner(bx, scale)) ImGui::OpenPopup("##vanilla");
-                    vanilla_popup(scale, rando_seed_dir() != NULL, true);
+                    vanilla_popup(scale, false, true);
                 }
             }
 
             bool any_popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId), typing = ui_text_busy();  // (before
-            g_page_x = PLAT_TOUCH && (page == BAR_COSMETICS || page == BAR_CHEATS), g_page_x_scale = scale;
+            g_page_x = false, g_page_x_scale = scale;
             tabs_body(scale, true, NULL, only[page]);                                             //  the pages run)
             g_page_x = false;
 #if PLAT_TOUCH
             if (page_indent > 0) ImGui::Unindent(page_indent);
-            if (page == BAR_RANDO && rando_tab_close_pressed()) back = true;
-            if (page == BAR_WARP && warp_tab_close_pressed()) back = true;
-            if (page == BAR_EDITOR && save_editor_close_pressed()) back = true;
             if (g_page_x_pressed) g_page_x_pressed = false, back = true;
 #endif
             // B with nothing focused-deeper goes back to the bar (not the Esc / B that ends typing: typing is from the
             // frame before, so it's still true the frame a field lets go)
-            if (!any_popup && !typing && !ui_text_busy() && !controls_ui_took_back() && !rando_tab_took_back() &&
-                !save_editor_took_back() && !warp_tab_took_back() &&
+            if (!any_popup && !typing && !ui_text_busy() && !controls_ui_took_back() &&
                 ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                 (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
                 back = true;

@@ -13,7 +13,6 @@
 #include "imgui_internal.h"  // (SetKeyOwner, NavCursorVisible)
 
 extern "C" {
-#include "../cosmetic_colour.h"
 #include "../input_bind.h"
 #include "../menu_sfx.h"
 #include "../platform.h"
@@ -502,63 +501,6 @@ bool opt_radio(const char *label, bool selected, const char *desc) {
 bool opt_action(const char *label, const char *value, const char *desc, bool upper, bool changed) {
     g_row_button = g_row_button || ((!value || !*value) && upper);  // (a plain action: a button)
     return row(label, value ? value : "", changed, desc, upper) == 2;
-}
-
-bool opt_colour(const char *label, CosColour *c, int slot, const char *desc) {
-    int prev = c->pick;
-    col_fix(c, slot);
-    // (the palette less what this row doesn't offer: grass and walls have no Black)
-    const char *names[N_COL];
-    int idx[N_COL], n = 0, shown = 0;
-    for (int i = 0; i < N_COL; i++)
-        if (col_offered(i, slot)) {
-            if (i == c->pick) shown = n;
-            idx[n] = i, names[n++] = g_col_names[i];
-        }
-    bool changed = opt_choice(label, &shown, names, n, COL_DEFAULT, desc);
-    c->pick = idx[shown];
-    if (g_collect) return false;
-    if (changed && c->pick == COL_CUSTOM && prev != COL_CUSTOM)  // (Custom starts from the colour it was on)
-        c->rgb = prev > COL_DEFAULT && prev < COL_RANDOM ? g_col_rgb[prev] : (c->rgb ? c->rgb : 0xF2F0EA);
-    if (c->pick != COL_CUSTOM) return changed;
-    ImGui::PushID(label);
-    char hex[16];
-    snprintf(hex, sizeof hex, "#%06X", (unsigned)(c->rgb & 0xFFFFFF));
-    g_value_shown = true;
-    bool open = opt_action("Custom color", hex, "Pick any color by hue, saturation and brightness.", true, true);
-    ImVec2 mn = ImGui::GetItemRectMin(), mx = ImGui::GetItemRectMax();
-    {   // a swatch of it, left of the value
-        float fs = ImGui::GetFontSize(), sw = fs * 1.1f, vw = ImGui::CalcTextSize(hex).x;
-        float x1 = mx.x - 30 * g_scale - vw - fs * 0.5f, y0 = (mn.y + mx.y - sw) * 0.5f;
-        ImU32 col = IM_COL32(c->rgb >> 16 & 255, c->rgb >> 8 & 255, c->rgb & 255, 255);
-        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(x1 - sw, y0), ImVec2(x1, y0 + sw), col, 4 * g_scale);
-        ImGui::GetWindowDrawList()->AddRect(ImVec2(x1 - sw, y0), ImVec2(x1, y0 + sw), plastic_theme().text, 4 * g_scale,
-                                            0, 1.5f * g_scale);
-    }
-    static int test_open = -1;  // LARECOMP_OPEN_PICKER=1 (test): the first Custom row's picker opens by itself
-    if (test_open < 0) test_open = getenv("LARECOMP_OPEN_PICKER") != NULL;
-    if (test_open) test_open = 0, open = true;
-    if (open) ImGui::OpenPopup("##picker");
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(30 * g_scale, 30 * g_scale));  // (inside the panel's frame)
-    ImGui::PushStyleVar(ImGuiStyleVar_PopupRounding, 9 * g_scale);
-    ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
-    ImGui::SetNextWindowPos(ImVec2(mx.x + 12 * g_scale, mn.y), ImGuiCond_Appearing);  // (beside the row, over the description)
-    if (ImGui::BeginPopup("##picker")) {
-        float f[3] = {(c->rgb >> 16 & 255) / 255.0f, (c->rgb >> 8 & 255) / 255.0f, (c->rgb & 255) / 255.0f};
-        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 11);
-        if (ImGui::ColorPicker3("##colour", f, ImGuiColorEditFlags_PickerHueWheel | ImGuiColorEditFlags_NoSidePreview |
-                                                   ImGuiColorEditFlags_DisplayHex | ImGuiColorEditFlags_NoAlpha)) {
-            c->rgb = (uint32_t)lroundf(f[0] * 255) << 16 | (uint32_t)lroundf(f[1] * 255) << 8 | (uint32_t)lroundf(f[2] * 255);
-            changed = true;
-        }
-        if (ImGui::Button(L("Done"), ImVec2(ImGui::GetFontSize() * 11, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
-            ImGui::CloseCurrentPopup();
-        ImGui::EndPopup();
-    }
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(2);
-    ImGui::PopID();
-    return changed;
 }
 
 bool opt_link(const char *label, const char *desc, const char *value) {

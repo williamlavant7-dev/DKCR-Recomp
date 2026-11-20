@@ -26,6 +26,7 @@
 #include "../output_scale.h"
 #include "../pace.h"
 #include "../recolour.h"
+#include "../texpatch.h"
 #include "../screen_filter.h"
 #include "../shader_prep.h"
 #include "../../settings.h"
@@ -6592,9 +6593,6 @@ static float wx_zn, wx_zf;
 static void weather_encode(void);
 
 extern uint64_t renderer_exec_frame(void);
-bool vk_weather_probes(float out[WEATHER_PROBES]);  // weather_vk.c
-void vk_weather_pass(VkImageView color, VkFormat fmt, uint32_t w, uint32_t h, VkImageView depth, const WeatherFrame *wf,
-                     int parts, bool dbg);
 
 // right after the scene composite (its pass still open): renderer.m's weather_encode, the same checks and frame
 static void weather_encode(void) {
@@ -6668,8 +6666,6 @@ static int sc_mark;  // this draw: 0 as the game has it, 1 the level's model, 2 
                      // 4 a character
 static uint64_t sc_frame = ~0ull, sc_done = ~0ull;
 static uint32_t wx_scene_w, wx_scene_h;  // (the scene image the composite read: the scene pass's target size)
-bool vk_snow_pass(VkImage color_img, VkImageView color, VkFormat fmt, uint32_t cw, uint32_t ch, VkImageView depth,
-                  VkImageView stencil, VkImageView shadow, SnowFrame *sf);  // snow_vk.c
 
 static int tex_class(NvnTexture *t) {  // (recolour.c's class of a texture the draw samples; 0: none)
     const TexBackend *b = t ? (const TexBackend *)t->backend : NULL;
@@ -7184,7 +7180,6 @@ static void draw_(CmdRec *r, bool indexed) {
 #define FTEX(i) (hook_pass ? ftex[i] : shader_texture_object(1, &pr->fi->tex[i]))
 #if PLAT_TOUCH
     if (fknown) {  // (the title and the file select, seen from their draws: what a tap does there, touch_controls.mm)
-        extern void texpatch_note_draw(int id);
         for (int i = 0; i < pr->fi->ntex; i++) {
             NvnTexture *t = FTEX(i);
             const TexBackend *b = t ? (const TexBackend *)t->backend : NULL;
@@ -7194,7 +7189,6 @@ static void draw_(CmdRec *r, bool indexed) {
 #endif
     {   // the Items page's cursor brackets while the cursor is on the companion card (runtime/hle/pets.c)
         extern bool pets_hide_item_cursor(void);
-        extern bool texpatch_is_item_cursor(int id);
         if (pets_hide_item_cursor() && fknown)
             for (int i = 0; i < pr->fi->ntex; i++) {
                 NvnTexture *t = FTEX(i);
@@ -7219,9 +7213,6 @@ static void draw_(CmdRec *r, bool indexed) {
             pot_tint((const float *)(uintptr_t)st.ubuf[0][2].addr, tint, st.vbuf[0].addr);
         // the gold Escape Bottle (runtime/hle/escape.c): draws sampling the bottle's item icon / model map
         // and the HUD hearts (heart colour, Cosmetics tab)
-        extern int texpatch_bottle_kind(int id);
-        extern int texpatch_heart_kind(int id);
-        extern void texpatch_heart_tint(int kind, float tint[8]);
         int bottle = 0, heart = 0;
         for (int i = 0; i < pr->fi->ntex && fknown; i++) {
             NvnTexture *t = FTEX(i);
@@ -7267,10 +7258,8 @@ static void draw_(CmdRec *r, bool indexed) {
         // (tp read after texture_info: its upload check may have identified the texture just now)
         NvnTexture *t = FTEX(i);
         const TexBackend *b = t ? (const TexBackend *)t->backend : NULL;
-        extern int texpatch_bottle_kind(int id);
         if (b && b->tp > 0 && texpatch_bottle_kind(b->tp - 1) == 1) {
             extern bool hint_sheet_icon_draw(const float *ui, uint32_t ui_size);
-            extern NvnTexture *texpatch_hint_icon(void);
             NvnTexture *ht;
             if (hint_sheet_icon_draw((const float *)(uintptr_t)st.ubuf[0][0].addr, (uint32_t)st.ubuf[0][0].size) &&
                 (ht = texpatch_hint_icon())) {

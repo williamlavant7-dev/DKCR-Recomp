@@ -16,7 +16,6 @@
 #include <pthread.h>
 
 #include "../hle.h"
-#include "../rando.h"
 #include "../ipc.h"
 #include "../platform.h"
 #include "../game_addresses.h"
@@ -143,8 +142,8 @@ static RomFile *rom_files;
 static int rom_nfiles;
 static uint64_t rom_data_off;
 
-// A seed replaces ~850 files and adds more: each is opened when it's read and kept in a small cache like the base
-// files', never all at once. They used to stay open until reboot, which ran into the open-file limit (256 for a
+// Replacement files (overlays: LAS's randomizer seeds filled these; nothing does for DKCR yet, kept for mods): each is
+// opened when it's read and kept in a small cache like the base files', never all at once. They used to stay open until reboot, which ran into the open-file limit (256 for a
 // macOS app) mid-play: saves failed to stage ("could not be saved") and seed-file reads came back as zeros.
 #define OV_FDS 64
 static struct { int ov, fd; uint64_t used; } g_ov_fds[OV_FDS];
@@ -178,7 +177,7 @@ static int ov_file_fd(int i) {
         if (fd < 0) errno = error;
     }
     if (fd < 0) {
-        if (!ov[i].warned) LOG("[fs] ERROR: can't open randomizer file %s (%s): the game reads zeros there\n", ov[i].path,
+        if (!ov[i].warned) LOG("[fs] ERROR: can't open replacement file %s (%s): the game reads zeros there\n", ov[i].path,
                                strerror(errno));
         ov[i].warned = true;
         return -1;
@@ -234,147 +233,6 @@ static void rom_dir_path(const uint8_t *dmeta, uint32_t dsize, uint32_t dir, cha
     for (int i = n - 1; i >= 0; i--) { strlcat(out, parts[i], cap); strlcat(out, "/", cap); }
 }
 
-// ---- files a seed ADDS (names the game's RomFS doesn't have: generated dungeon cells...). The game parses the
-// RomFS tables itself, so they're extended: a copy of the file-meta table with the new entries appended (linked
-// into their directory's file list and the name hash buckets) is placed past the end of the image, the header,
-// directory table and hash table are patched to match. New files must go into existing directories.
-static uint32_t romfs_hash(uint32_t parent, const char *name, uint32_t len) {
-    uint32_t hash = parent ^ 123456789;
-    for (uint32_t i = 0; i < len; i++) { hash = (hash >> 5) | (hash << 27); hash ^= (uint8_t)name[i]; }
-    return hash;
-}
-
-static int path_cmp(const void *a, const void *b) { return strcmp(*(char *const *)a, *(char *const *)b); }
-
-typedef struct { char rel[1024]; char host[1200]; uint64_t size; } NewFile;
-
-static void walk_new(const char *root, const char *rel, char **known, int nknown, NewFile **out, int *n, int *cap) {
-    char dirp[1200];
-    snprintf(dirp, sizeof dirp, "%s/%s", root, rel);
-    DIR *d = opendir(dirp);
-    if (!d) return;
-    struct dirent *e;
-    while ((e = readdir(d))) {
-        if (e->d_name[0] == '.') continue;
-        char r2[1024], h2[1200];
-        snprintf(r2, sizeof r2, "%s%s%s", rel, rel[0] ? "/" : "", e->d_name);
-        snprintf(h2, sizeof h2, "%s/%s", root, r2);
-        struct stat sb;
-        if (stat(h2, &sb)) continue;
-        if (S_ISDIR(sb.st_mode)) { walk_new(root, r2, known, nknown, out, n, cap); continue; }
-        const char *key = r2;
-        if (bsearch(&key, known, nknown, sizeof *known, path_cmp)) continue;  // replaces an existing file
-        if (*n == *cap) { *cap = *cap ? *cap * 2 : 64; *out = realloc(*out, sizeof **out * *cap); }
-        strlcpy((*out)[*n].rel, r2, sizeof (*out)[*n].rel);
-        strlcpy((*out)[*n].host, h2, sizeof (*out)[*n].host);
-        (*out)[*n].size = (uint64_t)sb.st_size;
-        (*n)++;
-    }
-    closedir(d);
-}
-
-// directory entry offset for "a/b/c" (NULL-terminated walk from the root, offset 0), -1 if missing
-static int64_t dir_lookup(const uint8_t *dm, uint64_t dsz, const char *path) {
-    uint32_t cur = 0;
-    char buf[1024];
-    strlcpy(buf, path, sizeof buf);
-    for (char *tok = strtok(buf, "/"); tok; tok = strtok(NULL, "/")) {
-        uint32_t child;
-        memcpy(&child, dm + cur + 8, 4);
-        while (child != 0xFFFFFFFFu && child + 0x18 <= dsz) {
-            uint32_t nl;
-            memcpy(&nl, dm + child + 0x14, 4);
-            if (nl == strlen(tok) && !memcmp(dm + child + 0x18, tok, nl)) break;
-            memcpy(&child, dm + child + 4, 4);
-        }
-        if (child == 0xFFFFFFFFu || child + 0x18 > dsz) return -1;
-        cur = child;
-    }
-    return cur;
-}
-
-static void add_new_files(const uint64_t *h, const uint8_t *dmeta, uint64_t dsz, uint64_t fsz) {
-    const char *seed = rando_seed_dir();
-    if (!seed) return;
-    char root[1100];
-    snprintf(root, sizeof root, "%s/romfs", seed);
-    char **known = malloc(sizeof *known * rom_nfiles);
-    for (int i = 0; i < rom_nfiles; i++) known[i] = rom_files[i].path;
-    qsort(known, rom_nfiles, sizeof *known, path_cmp);
-    NewFile *nf = NULL;
-    int n = 0, cap = 0;
-    walk_new(root, "", known, rom_nfiles, &nf, &n, &cap);
-    free(known);
-    if (!n) return;
-    rom_files = realloc(rom_files, sizeof(RomFile) * (rom_nfiles + n));
-    uint64_t hoff = h[5], hsz = h[6];
-    uint8_t *dcopy = malloc(dsz), *hcopy = malloc(hsz), *head = malloc(0x50);
-    memcpy(dcopy, dmeta, dsz);
-    if (base_pread(hcopy, hsz, hoff) != (ssize_t)hsz || base_pread(head, 0x50, 0) != 0x50) return;
-    // the file-meta table to extend: the override-patched copy if there is one
-    const uint8_t *base_meta = ov_meta;
-    uint8_t *tmp = NULL;
-    if (!base_meta) { tmp = malloc(fsz); base_pread(tmp, fsz, h[7]); base_meta = tmp; }
-    uint64_t extra = 0;
-    for (int i = 0; i < n; i++) {
-        const char *name = strrchr(nf[i].rel, '/');
-        name = name ? name + 1 : nf[i].rel;
-        extra += 0x20 + ((strlen(name) + 3) & ~3u);
-    }
-    uint64_t nsz = fsz + extra;
-    uint8_t *meta = calloc(1, nsz);
-    memcpy(meta, base_meta, fsz);
-    free(tmp);
-    if (!ov_end) ov_end = (base_size() + 0xF) & ~0xFull;
-    uint64_t meta_at = ov_end;  // the new table first, then the new files' data
-    uint64_t data_at = (meta_at + nsz + 0xF) & ~0xFull;
-    uint32_t nb = (uint32_t)(hsz / 4);
-    uint64_t o = fsz;
-    int added = 0;
-    for (int i = 0; i < n; i++) {
-        char dirp[1024];
-        strlcpy(dirp, nf[i].rel, sizeof dirp);
-        char *slash = strrchr(dirp, '/');
-        const char *name = slash ? slash + 1 : nf[i].rel;
-        if (slash) *slash = 0; else dirp[0] = 0;
-        int64_t dir = dir_lookup(dcopy, dsz, dirp);
-        if (dir < 0) { LOG("[fs] seed file %s: directory not in the game's RomFS, skipped\n", nf[i].rel); continue; }
-        uint32_t nl = (uint32_t)strlen(name), d32 = (uint32_t)dir, entry = (uint32_t)o, child;
-        memcpy(&child, dcopy + dir + 0xC, 4);  // dir's first file -> becomes our sibling
-        uint64_t rel = data_at - rom_data_off, size = nf[i].size;
-        uint32_t bucket = romfs_hash(d32, name, nl) % nb, prev;
-        memcpy(&prev, hcopy + 4 * bucket, 4);
-        memcpy(meta + o, &d32, 4);
-        memcpy(meta + o + 4, &child, 4);
-        memcpy(meta + o + 8, &rel, 8);
-        memcpy(meta + o + 0x10, &size, 8);
-        memcpy(meta + o + 0x18, &prev, 4);
-        memcpy(meta + o + 0x1C, &nl, 4);
-        memcpy(meta + o + 0x20, name, nl);
-        memcpy(dcopy + dir + 0xC, &entry, 4);
-        memcpy(hcopy + 4 * bucket, &entry, 4);
-        o += 0x20 + ((nl + 3) & ~3u);
-        if (ov_n == ov_cap) { ov_cap = ov_cap ? ov_cap * 2 : 256; ov = realloc(ov, sizeof *ov * ov_cap); }
-        ov[ov_n++] = (Overlay){data_at, size, strdup(nf[i].host), false, NULL};
-        rom_files[rom_nfiles++] = (RomFile){data_at, size, strdup(nf[i].rel), entry};
-        data_at = (data_at + size + 0xF) & ~0xFull;
-        added++;
-    }
-    // the new table goes before the new data (keep the overlay list sorted by start)
-    if (ov_n == ov_cap) { ov_cap = ov_cap ? ov_cap * 2 : 256; ov = realloc(ov, sizeof *ov * ov_cap); }
-    memmove(ov + (ov_n - added) + 1, ov + (ov_n - added), sizeof *ov * added);
-    ov[ov_n - added] = (Overlay){meta_at, nsz, NULL, false, meta};
-    ov_n++;
-    ov_end = data_at;
-    uint64_t fmeta_off = meta_at, fmeta_size = o;
-    memcpy(head + 7 * 8, &fmeta_off, 8);
-    memcpy(head + 8 * 8, &fmeta_size, 8);
-    patches[npatches++] = (Patch){0, 0x50, head};
-    patches[npatches++] = (Patch){h[3], dsz, dcopy};
-    patches[npatches++] = (Patch){hoff, hsz, hcopy};
-    LOG("[fs] randomizer: %d new romfs files\n", added);
-}
-
 static void rom_index(void) {
     uint64_t h[10];
     if (base_pread(h, sizeof h, 0) != (ssize_t)sizeof h) return;
@@ -404,34 +262,6 @@ static void rom_index(void) {
         rom_files[rom_nfiles++] = (RomFile){rom_data_off + data, size, path, (uint32_t)o};
         o += 0x20 + ((namelen + 3) & ~3u);
     }
-    // Randomizer seed: replacement files are served from the seed folder. The file-meta table is patched
-    // (in a copy) to point them at data appended past the end of the image; reads there go to host files.
-    for (int i = 0; i < rom_nfiles; i++) {
-        char host[1200];
-        if (!rando_romfs_override(rom_files[i].path, host, sizeof host)) continue;
-        struct stat sb;
-        if (stat(host, &sb)) continue;
-        if (!ov_meta) {
-            ov_meta = malloc(fsz);
-            memcpy(ov_meta, fmeta, fsz);
-            ov_meta_off = foff;
-            ov_meta_size = fsz;
-            ov_end = (base_size() + 0xF) & ~0xFull;
-        }
-        uint64_t rel = ov_end - rom_data_off, size = (uint64_t)sb.st_size;
-        memcpy(ov_meta + rom_files[i].meta + 8, &rel, 8);
-        memcpy(ov_meta + rom_files[i].meta + 0x10, &size, 8);
-        if (ov_n == ov_cap) { ov_cap = ov_cap ? ov_cap * 2 : 256; ov = realloc(ov, sizeof *ov * ov_cap); }
-        ov[ov_n].start = ov_end;
-        ov[ov_n].size = size;
-        ov[ov_n].path = strdup(host);
-        ov[ov_n].warned = false;
-        ov[ov_n].mem = NULL;
-        ov_n++;
-        ov_end = (ov_end + size + 0xF) & ~0xFull;
-    }
-    if (ov_n) LOG("[fs] randomizer: %d romfs files replaced\n", ov_n);
-    if (ov_meta) { patches[npatches++] = (Patch){ov_meta_off, ov_meta_size, ov_meta}; }
     // The game's own files (before a seed's added files; the crash dialog checks them), their sizes summed (the files
     // that aren't the game's left out: issue #553), and the files that aren't the game's named. Copies of the game code at the root (game_romfs_exefs_copy) are left out.
     char game_dir[1100] = "";
@@ -458,7 +288,6 @@ static void rom_index(void) {
     if (want && rt_romfs_bytes != want)
         LOG("[fs] romfs: %llu bytes in %d files, this version's are %llu: damaged or changed game files\n",
             (unsigned long long)rt_romfs_bytes, rt_romfs_files, (unsigned long long)want);
-    add_new_files(h, dmeta, dsz, fsz);
     qsort(rom_files, rom_nfiles, sizeof *rom_files, rom_cmp);
     free(dmeta);
     free(fmeta);
@@ -490,15 +319,13 @@ static ssize_t romfs_read(uint8_t *dst, uint64_t size, uint64_t off) {
                     plat_os_write((uint64_t)(uintptr_t)(dst + done), want);
                     r = fd < 0 ? -1 : pread(fd, dst + done, want, (off_t)in);
                     if (fd >= 0 && r != (ssize_t)want && !ov[i].warned) {
-                        LOG("[fs] ERROR: short read of randomizer file %s at %llu (%lld of %llu bytes, %s): zeros "
+                        LOG("[fs] ERROR: short read of replacement file %s at %llu (%lld of %llu bytes, %s): zeros "
                             "there\n", ov[i].path, (unsigned long long)in, (long long)r, (unsigned long long)want,
                             r < 0 ? strerror(errno) : "file changed?");
                         ov[i].warned = true;
                     }
                     pthread_mutex_unlock(&g_ov_lock);
                 }
-                extern void enemy_random_filter(const char *host, uint64_t off, uint8_t *dst, uint64_t n);
-                if (r > 0) enemy_random_filter(ov[i].path, in, dst + done, (uint64_t)r);  // (enemy mode Random)
             }
             if (r < 0) r = 0;
             if ((uint64_t)r < n) memset(dst + done + r, 0, n - r);
@@ -552,7 +379,6 @@ static void storage(Service *s, IpcReq *req, IpcResp *resp) {
             if (path && path != last) {
                 last = path;
                 if (getenv("LARECOMP_LOG_FILES")) LOG("[fs] read %s\n", path);
-                romfs_file_read_hook(path);
             }
         }
         static uint64_t reads, bytes;
@@ -857,14 +683,6 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
         if (n < 0) resp->result = errno_result();
         if (n > 0 && !f->scratch && strstr(f->path, "savedata")) {
             LOG("[save] read %s off %lld size %lld -> guest %llx\n", f->path, (long long)off, (long long)size, (unsigned long long)b->addr);
-            extern void save_editor_file_read(const char *path, uint64_t addr, int64_t off, int64_t size);
-            save_editor_file_read(f->path, b->addr, off, n);
-            extern void flags_ext_save_read(const char *path, uint64_t addr, int64_t off, int64_t size);
-            flags_ext_save_read(f->path, b->addr, off, n);
-            extern void dpad_items_save_read(const char *path, uint64_t addr, int64_t off, int64_t size);
-            dpad_items_save_read(f->path, b->addr, off, n);  // (runtime/hle/dpad_items.c)
-            extern void weather_cycle_save_read(const char *path, uint64_t addr, int64_t off, int64_t size);
-            weather_cycle_save_read(f->path, b->addr, off, n);  // (runtime/nvn/weather_cycle.c)
         }
         OUT(int64_t, 0) = n < 0 ? 0 : n;
         resp_size(resp, 8);
@@ -882,15 +700,6 @@ static void file(Service *s, IpcReq *req, IpcResp *resp) {
             if (n < 0 && errno == EINTR) continue;
             if (n <= 0) { error = n ? errno : EIO; break; }
             done += n;
-        }
-        if (!error && !f->scratch && strstr(f->path, "savedata")) {
-            extern bool flags_ext_save_written(const char *path, uint64_t addr, int64_t off, int64_t size);
-            errno = 0;
-            if (!flags_ext_save_written(f->path, a->addr, off, size)) error = errno ? errno : EIO;
-            extern void weather_cycle_save_written(const char *path, uint64_t addr, int64_t off, int64_t size);
-            if (!error) weather_cycle_save_written(f->path, a->addr, off, size);  // (runtime/nvn/weather_cycle.c)
-            extern void dpad_items_save_written(const char *path, uint64_t addr, int64_t off, int64_t size);
-            if (!error) dpad_items_save_written(f->path, a->addr, off, size);  // (runtime/hle/dpad_items.c)
         }
         if (error && f->fs) file_failed(f, "write", error);
         else if (error) { errno = error; resp->result = errno_result(); }
@@ -1062,11 +871,6 @@ static void filesystem(Service *s, IpcReq *req, IpcResp *resp) {
 static Service *open_host_fs(const char *sub) {
     HostFs *fs = calloc(1, sizeof *fs);
     if (getenv("LARECOMP_SAVE_DIR")) g_save_dir = getenv("LARECOMP_SAVE_DIR");  // test runs use a scratch copy
-    else if (rando_seed_dir()) {  // each randomizer seed has its own save slots
-        static char seed_save[600];
-        snprintf(seed_save, sizeof seed_save, "%s/save", rando_seed_dir());
-        g_save_dir = seed_save;
-    }
     snprintf(fs->root, sizeof fs->root, "%s/%s", g_save_dir, sub);
     char cmd[1200];
     snprintf(cmd, sizeof cmd, "%s", fs->root);

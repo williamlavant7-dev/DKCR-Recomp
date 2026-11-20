@@ -45,7 +45,7 @@ int inventory_items_cursor(void);    // runtime/ui/inventory_overlay.mm
 bool tracker_map_page_shown(void);   // runtime/ui/tracker_overlay.mm
 bool chaos_dgnmap_shown(void);       // runtime/ui/chaos_overlay.mm
 bool pause_menu_shown(void);         // runtime/ui/inventory_overlay.mm
-int texpatch_title_screen(void);     // runtime/nvn/texpatch.c
+static int texpatch_title_screen(void) { return 0; }  // (LAS knew its title screen by a texture: DKCR, not yet)
 }
 ImTextureID ui_game_icon(const char *name);  // runtime/ui/triforce_icons.mm
 

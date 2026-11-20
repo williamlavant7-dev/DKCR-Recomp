@@ -1,5 +1,5 @@
 // Start screen, shown before the game boots (user 2026-10-08, styled after Dusklight's launcher): PLAY (the vanilla
-// game), RANDOMIZER (‹ New Seed / a seed ›: user 2026-11-09), SETTINGS, QUIT, game-files status at the lower left.
+// game), SETTINGS, QUIT, game-files status at the lower left.
 // Nothing of the game ships with LAS Recomp: on first launch the user picks the folder with their own game files (1.0.0, 1.0.1 or 1.1.0), we check
 // the main module's build id (runtime/game_addresses/versions.h), copy the files and build the game's data image; PLAY stays disabled until that worked. The background is a frame of the game's own title movie (from the user's files) once extracted.
 //
@@ -66,8 +66,6 @@ extern "C" {
 #include "menu_sfx.h"
 #include "nvn/shader_prep.h"
 bool controls_ui_took_back(void);  // ui/controls_ui.mm: B went back a step on Configure inputs
-bool rando_tab_took_back(void);   // ui/rando_tab.mm: B went back a step in the right column
-bool rando_tab_close_pressed(void);  // ui/rando_tab.mm (touch screens: the X is in its own pane)
 float menu_page_corner(int tab, float scale);  // ui/menu.mm (touch screens: a page's icon for its title)
 void ui_window_init(void);
 SDL_Window *ui_window(void);
@@ -968,26 +966,10 @@ static void load_background(GpuDevice dev) {
     avformat_close_input(&fmt);
 }
 
-// ------------------------------------------------------------------ seeds
-static std::vector<std::string> list_seeds() {
-    std::vector<std::string> out;
-    if (DIR *d = opendir("rando")) {
-        while (struct dirent *e = readdir(d)) {
-            if (e->d_name[0] == '.') continue;
-            std::string dir = std::string("rando/") + e->d_name;
-            if (file_exists(dir + "/settings.json") && file_exists(dir + "/romfs")) out.push_back(e->d_name);
-        }
-        closedir(d);
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
-
 // ------------------------------------------------------------------ screen
 static ImFont *g_font_title, *g_font_menu, *g_font_small;
-// SETTINGS: the in-game menu's tabs (runtime/ui/menu.mm); RANDO: the Randomizer panel (New Seed: rando_tab.mm);
-// IOS: the export page (from Settings > Prelaunch)
-enum Page { MAIN, SETTINGS, SETUP, RANDO, IOS };
+// SETTINGS: the in-game menu's tabs (runtime/ui/menu.mm); IOS: the export page (from Settings > Prelaunch)
+enum Page { MAIN, SETTINGS, SETUP, IOS };
 static int g_refocus = MAIN;  // back on the main page: select the item of the page we came from (controllers)
 
 // A big menu line: gold + a marker when focused / hovered (keyboard, gamepad or mouse), grey when disabled
@@ -1005,12 +987,11 @@ extern "C" void menu_apply_window_requests(void *sdl_window);
 extern "C" void input_cursor_event(const SDL_Event *e);  // runtime/hle/input.c
 extern "C" bool input_cursor_hidden(void);
 extern "C" int g_start_screen;  // runtime/hle/warp.c: the start screen is up (no game loaded: don't read its memory)
-// The Randomizer panel's Play / Play Now on the start screen (rando_tab.mm): start the game with that seed
-static std::string g_play_seed;
-static bool g_play_seed_req, g_play_pending;
+// A launcher shortcut's Play (phones): PLAY as if pressed. (LAS's took a randomizer seed: the name is ignored.)
+static bool g_play_req, g_play_pending;
 extern "C" void launcher_play_seed(const char *seed) {
-    g_play_seed = seed ? seed : "";
-    g_play_seed_req = true;
+    (void)seed;
+    g_play_req = true;
 }
 static float g_menu_gap = 0.35f;  // space under each item, in line heights
 
@@ -1094,7 +1075,7 @@ static bool menu_tip(float s) {
         static const char *const home[] = {LN("Home button"), LN("Xbox button"), LN("PlayStation button")};  // (bind_label_family)
         static const char *const pad[] = {LN("Minus + Plus"), LN("View + Menu"), LN("Create + Options")};
         ImGui::PushTextWrapPos(0);
-        ImGui::TextUnformatted(L("LAS Recomp has its own menu for settings, the randomizer, cosmetics and more."));
+        ImGui::TextUnformatted(L("LAS Recomp has its own menu for settings and more."));
         ImGui::Spacing();
         int fam = bind_label_family() % 3;
         ImGui::Text(L("Open it in game with F1 or Esc, or press the %s or %s together on a controller."), L(home[fam]),
@@ -1526,7 +1507,7 @@ static bool launcher_pad_event(const SDL_Event &e) {
     }
 }
 
-// Returns when PLAY is chosen (seed stored in g_settings.rando_seed); QUIT exits.
+// Returns when PLAY is chosen; QUIT exits.
 // Settings' first tab, on the start screen only: the extracted game files (size, delete) and the user's own Switch
 // fonts (import / back to the substitute)
 // Open a folder in Finder / Explorer / the Files app (relative paths are in the data root, the working directory)
@@ -1900,7 +1881,7 @@ static void data_folder_popup(float s) {
             close = ImGui::Button(L("Cancel"), bw) || esc;
         } else {
             bool room = t.free >= t.need;
-            ImGui::Text(L("Move your saves, seeds, settings and game files there, %.1f GB in all, or start fresh?"),
+            ImGui::Text(L("Move your saves, settings and game files there, %.1f GB in all, or start fresh?"),
                         t.bytes / 1e9);
             if (!room) ImGui::TextColored(red, L("Not enough space there. Only %.1f GB is free."), t.free / 1e9);
             ImGui::Spacing();
@@ -1962,7 +1943,7 @@ static void data_folder_popup(float s) {
 // picked goes through the same question as on the desktop (move the data there, or start fresh).
 static void storage_rows(bool busy) {
     const char *fixed = rt_data_root_fixed() ? L(rt_data_root_fixed()) : NULL;
-    std::string d = std::string(L("Where LAS Recomp keeps game files, saves, seeds and settings.")) + "\n\n" +
+    std::string d = std::string(L("Where LAS Recomp keeps game files, saves and settings.")) + "\n\n" +
                     data_root_shown() + (fixed ? std::string("\n\n") + fixed : "");
     opt_section("Storage");
 #ifdef __ANDROID__
@@ -2062,7 +2043,7 @@ static void prelaunch_tab(float sc) {
     if (shot_del) confirm_delete = true, shot_del = false;  // (test: :askdelete)
     if (!confirm_delete) {
         if (opt_action("Delete game files", gbs, "Frees up the space LAS Recomp's copy of the game files uses. Your saves, "
-                       "seeds and settings stay.", true))
+                       "settings stay.", true))
             confirm_delete = true;
     } else {
         std::string d = L("Deletes the extracted game files now.");
@@ -2219,22 +2200,10 @@ extern "C" void launcher_run(const char *root) {
         fprintf(stderr, "[launcher] removed the old game data image (romfs.bin)\n");
     std::string status = check_game_files(g_root);
     if (check_copied_files(g_root).empty()) load_background(dev);  // (also behind an update of the game code)
-    // the RANDOMIZER row's choices: 0 New Seed, then the seeds (starting on the last one played)
-    std::vector<std::string> seeds = list_seeds();
-    int choice = 0;
-    auto choose = [&](const char *name) {
-        choice = 0;
-        for (size_t i = 0; i < seeds.size(); i++)
-            if (seeds[i] == name) choice = (int)i + 1;
-    };
-    choose(g_settings.rando_last);
-    // what the game starts with ("" vanilla): PLAY's, or the row's seed; until one is pressed, the seed of the last
-    // start (the test hooks that press PLAY themselves keep booting what they did)
-    std::string start_seed = g_settings.rando_seed;
     Page page = status.empty() ? MAIN : SETUP;
     bool play = false;
     // LARECOMP_LAUNCHER_SHOT=<frame>[:<page>] (test): save build/launcher.png at that frame and exit; page:
-    // settings[:<tab>] / rando / askdelete / setup / extracting / preparing / skipask / recompiling / tip / aspect / notice
+    // settings[:<tab>] / askdelete / setup / extracting / preparing / skipask / recompiling / tip / aspect / notice
     long shot_at = getenv("LARECOMP_LAUNCHER_SHOT") ? atol(getenv("LARECOMP_LAUNCHER_SHOT")) : 0, frame = 0;
     if (shot_at) {
 #ifdef __APPLE__
@@ -2243,7 +2212,6 @@ extern "C" void launcher_run(const char *root) {
         const char *pg = strchr(getenv("LARECOMP_LAUNCHER_SHOT"), ':');
         if (pg && (!strncmp(pg + 1, "settings", 8) || !strcmp(pg + 1, "askdelete"))) page = SETTINGS, menu_tabs_focus(true);
         if (pg && !strcmp(pg + 1, "setup")) page = SETUP;
-        if (pg && !strcmp(pg + 1, "rando")) page = RANDO, menu_tabs_focus(false);
         if (pg && !strcmp(pg + 1, "ios")) page = IOS;
         if (pg && !strcmp(pg + 1, "preparing")) page = SETUP, prep_progress(666, 1585), set_job(LN("Preparing shaders"));
         if (pg && !strcmp(pg + 1, "skipask")) page = SETUP, prep_progress(666, 1585), set_job(LN("Preparing shaders")), g_prep_skip_ask = true;
@@ -2368,8 +2336,6 @@ extern "C" void launcher_run(const char *root) {
         }
         if (play) break;
         menu_apply_window_requests(win);  // (the Video tab's Fullscreen)
-        // no seed on the start screen: PLAY is the vanilla game (Settings > Gameplay greys out only what a seed forces)
-        g_settings.rando_seed[0] = 0;
         if (g_files_deleted) {  // (Settings > Prelaunch deleted them)
             g_files_deleted = false;
             status = check_game_files(g_root);
@@ -2378,23 +2344,15 @@ extern "C" void launcher_run(const char *root) {
 #if PLAT_TOUCH
         if (char qs[128]; plat_touch_play_request(qs, sizeof qs)) launcher_play_seed(qs);
 #endif
-        // the Randomizer panel's Play or a launcher shortcut: that seed, then PLAY as if pressed (first-launch
-        // questions); a seed deleted since leaves the start screen as it is
-        if (g_play_seed_req) {
-            g_play_seed_req = false;
-            seeds = list_seeds();
-            int want = g_play_seed.empty() ? 0 : -1;
-            for (size_t i = 0; i < seeds.size(); i++)
-                if (seeds[i] == g_play_seed) want = (int)i + 1;
-            if (want < 0) {
-                fprintf(stderr, "[launcher] play: seed \"%s\" is gone\n", g_play_seed.c_str());
+        // a launcher shortcut's Play: PLAY as if pressed (first-launch questions)
+        if (g_play_req) {
+            g_play_req = false;
 #if PLAT_TOUCH
-            } else if (!status.empty() || g_busy) {  // (a shortcut before the game files are set up)
+            if (!status.empty() || g_busy) {  // (a shortcut before the game files are set up)
                 fprintf(stderr, "[launcher] play: the game files aren't ready\n");
+            } else
 #endif
-            } else {
-                if (want) choice = want;  // (the row on that seed, back from the game's Title screen)
-                start_seed = g_play_seed;
+            {
                 bind_capture_cancel();
                 settings_save();
                 page = MAIN;
@@ -2600,7 +2558,6 @@ extern "C" void launcher_run(const char *root) {
                 if (PLAT_TOUCH) ImGui::SetWindowFontScale(kPhoneMenu);
                 bool pressed = menu_item(L("PLAY"), status.empty());
                 ImGui::SetWindowFontScale(1.0f);
-                if (pressed) start_seed.clear();
                 if (status.empty()) {  // PLAY twinkles now and then while the game is ready
                     if (PLAT_TOUCH) ImGui::SetWindowFontScale(kPhoneMenu);
                     ImGui::PushFont(g_font_menu);
@@ -2613,84 +2570,6 @@ extern "C" void launcher_run(const char *root) {
                     sparkle(dl, ImVec2(play_at.x + w - h * 0.32f, play_at.y + h * 0.08f), h * 0.11f, k2 * 0.8f, -t * 0.8f);
                     ImGui::SetWindowFontScale(1.0f);
                 }
-
-                // RANDOMIZER ‹ New Seed / Seed: <name> ›: New Seed opens the Randomizer panel, a seed starts the game with
-                // it. Left / right step through them and stop at either end (keyboard, controller, the mouse on the
-                // arrows, a tap or swipe on phones).
-                bool hov = false;
-                char pick[160];
-                if (choice) snprintf(pick, sizeof pick, L("Seed: %s"), seeds[choice - 1].c_str());
-                else snprintf(pick, sizeof pick, "%s", L("New Seed"));
-                const int n = (int)seeds.size() + 1;
-                ImGui::SetCursorPosX(x0);
-                if (g_refocus == RANDO) ImGui::SetKeyboardFocusHere(), g_refocus = MAIN;
-                int arrow = 0;
-                bool rando_pressed;
-                const int choice0 = choice;  // (a step plays the tab sound, as a ◀ value ▶ row's: below)
-#if PLAT_TOUCH
-                rando_pressed = phone_pick_row(L("RANDOMIZER"), pick, choice, n, status.empty(),
-                                               status.empty() && !waiting && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId),
-                                               ds.x, &hov);
-                if (g_pick_step) {  // (an arrow tapped or the choice swiped)
-                    choice = std::max(0, std::min(choice + g_pick_step, n - 1));
-                    g_pick_step = 0;
-                }
-#else
-                char label[192];
-                snprintf(label, sizeof label, "%s    \xe2\x80\xb9 %s \xe2\x80\xba", L("RANDOMIZER"), pick);
-                // a long seed name may run past the other items (to 80% of the window); beyond that the line shrinks
-                ImGui::PushFont(g_font_menu);
-                float fit = (ds.x * 0.8f - x0) / ImGui::CalcTextSize(label).x;
-                ImGui::PopFont();
-                if (fit < 1) ImGui::SetWindowFontScale(fit < 0.55f ? 0.55f : fit);
-                // the ‹ › arrows are clickable with the mouse: they step the choice instead of pressing the row
-                {
-                    ImGui::PushFont(g_font_menu);
-                    ImVec2 at = ImGui::GetCursorScreenPos();
-                    const char *lt = strstr(label, "\xe2\x80\xb9"), *rt = strstr(label, "\xe2\x80\xba");
-                    float h = ImGui::CalcTextSize(label).y, pad = h * 0.35f;
-                    float lx = at.x + ImGui::CalcTextSize(label, lt).x, rx = at.x + ImGui::CalcTextSize(label, rt).x;
-                    float aw = ImGui::CalcTextSize("\xe2\x80\xb9").x;
-                    ImVec2 m = ImGui::GetIO().MousePos;
-                    bool in_y = m.y >= at.y - pad && m.y <= at.y + h + pad;
-                    if (in_y && m.x >= lx - pad && m.x <= lx + aw + pad) arrow = -1;
-                    if (in_y && m.x >= rx - pad && m.x <= rx + aw + pad) arrow = 1;
-                    ImGui::PopFont();
-                }
-                const char *name = strstr(label, "\xe2\x80\xb9") + 4, *name_end = strstr(label, " \xe2\x80\xba");
-                rando_pressed = menu_item(label, status.empty(), &hov, name,
-                                          choice ? IM_COL32(250, 250, 255, 255) : IM_COL32(246, 232, 176, 255),
-                                          name_end);  // (the choice keeps its colour when hovered: a seed white, "New
-                                                      //  Seed" vanilla cream; the arrows stay white)
-                ImGui::SetWindowFontScale(1.0f);
-                // (the press on an arrow: no decide sound, the step plays its own)
-                if (arrow && hov && ImGui::IsMouseClicked(0)) menu_sfx_click_silent();
-                if (rando_pressed && arrow && ImGui::IsMouseReleased(0)) {  // (a mouse click on an arrow: a step, to the ends)
-                    choice = std::max(0, std::min(choice + arrow, n - 1));
-                    rando_pressed = false;
-                }
-#endif
-                if (hov && status.empty()) {
-                    if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadLeft))
-                        choice = std::max(choice - 1, 0);
-                    if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) || ImGui::IsKeyPressed(ImGuiKey_GamepadDpadRight))
-                        choice = std::min(choice + 1, n - 1);
-                    // left / right are ours while the row is selected: ImGui's navigation would otherwise take them too,
-                    // find nothing beside it and scroll the window (the row loses its highlight, the stepping stops)
-                    ImGuiID own = ImGui::GetID("##rando_lr");
-                    for (ImGuiKey k : {ImGuiKey_LeftArrow, ImGuiKey_RightArrow, ImGuiKey_GamepadDpadLeft, ImGuiKey_GamepadDpadRight})
-                        ImGui::SetKeyOwner(k, own);
-                }
-                if (choice != choice0) menu_sfx_play(MENU_SFX_TAB);
-                static int logged = -1;
-                if (choice != logged)
-                    logged = choice, fprintf(stderr, "[launcher] randomizer row: %s\n", choice ? seeds[choice - 1].c_str() : "New Seed");
-                if (rando_pressed && !choice) {  // New Seed: the Randomizer panel
-                    menu_tabs_focus(false);
-                    page = RANDO;
-                    rando_pressed = false;
-                }
-                if (rando_pressed) start_seed = seeds[choice - 1], pressed = true;
 
                 // first start ever: the aspect ratio question, then how to reach our menu, then the game
                 if (g_play_pending && status.empty()) pressed = true, g_play_pending = false;
@@ -2739,9 +2618,9 @@ extern "C" void launcher_run(const char *root) {
                 preview_safe_area(sl, st, sr, sb);
                 menu_preview_frame(sc, g_font_small, g_font_menu);
                 pieces = true;
-            } else if (page == SETTINGS || page == RANDO) {
+            } else if (page == SETTINGS) {
                 // the in-game menu's tabs (runtime/ui/menu.mm), in a window like the in-game one; tabs that need a
-                // loaded game say so. RANDO: the Randomizer page alone (its own panel, not one of Settings' tabs)
+                // loaded game say so
                 float sc, w, h;
                 ImVec2 centre;
                 panel_layout(ds, &sc, &w, &h, &centre);
@@ -2763,31 +2642,21 @@ extern "C" void launcher_run(const char *root) {
                 plastic_widgets(true);  // (popups, buttons and fields inside as pieces too)
                 ImGui::PushFont(g_font_small);
                 ImGui::PushFont(g_font_menu);
-                if (!PLAT_TOUCH)  // (touch: an icon for the title - Settings' gear in tabs_body, the Randomizer's below)
-                    ImGui::TextColored(plastic_col(plastic_theme().title), "%s", page == RANDO ? L("Randomizer") : L("Settings"));
+                if (!PLAT_TOUCH)  // (touch: an icon for the title - Settings' gear in tabs_body)
+                    ImGui::TextColored(plastic_col(plastic_theme().title), "%s", L("Settings"));
                 ImGui::PopFont();
                 bool back = false;
-                {  // close: the round X in the corner (B / Esc too); touch, the Randomizer: in its own pane (rando_tab.mm)
+                {  // close: the round X in the corner (B / Esc too)
                     float bx = 44 * sc;
-                    if (!(PLAT_TOUCH && page == RANDO)) back = plastic_close_corner(bx, sc);
-                    // (Settings: Reset to vanilla beside it, as in game; PLAY then starts the vanilla game)
-                    // (the seed is dropped from the saved settings too, as the reset's other settings are)
-                    if (page != RANDO && menu_reset_corner(bx, sc, g_font_small, g_font_menu, !start_seed.empty())) {
-                        start_seed.clear();
-                        g_settings.rando_seed[0] = 0;
-                        settings_save();
-                    }
+                    back = plastic_close_corner(bx, sc);
+                    // (Reset to vanilla beside it, as in game)
+                    if (menu_reset_corner(bx, sc, g_font_small, g_font_menu, false)) settings_save();
                 }
                 bool popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId);  // (before the pages run, like the menu)
-                if (page == RANDO) {
-                    float indent = PLAT_TOUCH ? menu_page_corner(3, sc) : 0;
-                    menu_tabs_draw(sc, g_font_small, g_font_menu, false, NULL, 3);
-                    if (indent > 0) ImGui::Unindent(indent);
-                    if (PLAT_TOUCH && rando_tab_close_pressed()) back = true;
-                } else menu_tabs_draw(sc, g_font_small, g_font_menu, false, prelaunch_tab);
+                menu_tabs_draw(sc, g_font_small, g_font_menu, false, prelaunch_tab);
                 int cap_dev;
                 bind_capture_active(&cap_dev, NULL, NULL);
-                if (!popup && !typing && cap_dev < 0 && !controls_ui_took_back() && !rando_tab_took_back() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
+                if (!popup && !typing && cap_dev < 0 && !controls_ui_took_back() && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) &&
                     (ImGui::IsKeyPressed(ImGuiKey_GamepadFaceRight, false) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)))
                     back = true;
                 ImGui::PopFont();
@@ -2803,9 +2672,6 @@ extern "C" void launcher_run(const char *root) {
                     bind_capture_cancel();
                     settings_save();
                     g_refocus = page, page = to_ios ? IOS : MAIN;
-                    std::string cur = choice ? seeds[choice - 1] : "";  // seeds made / renamed / deleted in the panel
-                    seeds = list_seeds();
-                    choose(cur.c_str());
                 }
             } else if (update_only) {
                 pthread_mutex_lock(&g_lock);
@@ -2915,14 +2781,14 @@ extern "C" void launcher_run(const char *root) {
                     files_gb = -1;  // (re-measured after a setup)
                 } else {
                     // DELETE: frees LAS Recomp's copy (runtime/paths.c removes only what the setup made, only inside
-                    // the data root). Saves, seeds, settings and the user's own files stay.
+                    // the data root). Saves, settings and the user's own files stay.
                     if (files_gb < 0) files_gb = rt_game_files_size(g_root.c_str()) / 1e9;
                     char gb[32];
                     snprintf(gb, sizeof gb, "%.1f GB", files_gb);
                     opt_section("Game files");
                     if (!g_confirm_delete) {
                         if (opt_action("Delete game files", gb, "Frees up the space LAS Recomp's copy of the game files "
-                                       "uses. Your saves, seeds and settings stay.", true))
+                                       "uses. Your saves and settings stay.", true))
                             g_confirm_delete = true;
                         first_row();
                     } else {
@@ -3190,9 +3056,7 @@ extern "C" void launcher_run(const char *root) {
 #endif
         }
     }
-    // play: remember the seed (the RANDOMIZER row starts on the last one played), hand the window to the game
-    snprintf(g_settings.rando_seed, sizeof g_settings.rando_seed, "%s", start_seed.c_str());
-    if (!start_seed.empty()) snprintf(g_settings.rando_last, sizeof g_settings.rando_last, "%s", start_seed.c_str());
+    // play: hand the window to the game
     settings_save();
 #ifdef __APPLE__
     ImGui_ImplMetal_Shutdown();

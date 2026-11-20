@@ -1784,10 +1784,6 @@ void backend_present_now(NvnTexture *t, uint64_t frame) {
     }
     if (have) {
         double dw = g_vk.sc_extent.width, dh = g_vk.sc_extent.height;
-        extern void widescreen_frame_end(uint64_t frame);
-        widescreen_frame_end(frame);
-        extern void widescreen_set_factor(float f);
-        extern bool widescreen_allowed(void);
         // render scale + placement in the window: runtime/nvn/output_scale.c (Video tab "Resolution");
         // GPU time since the last frame (exec.c's GPU timer; -1 without one: dynamic resolution goes by frame times):
         // the game's submissions and the window image's (LARECOMP_DYNRES_COUNT_PRESENT=0: the game's only, as before)
@@ -1815,14 +1811,12 @@ void backend_present_now(NvnTexture *t, uint64_t frame) {
             sp_have = true;
         }
         OutScale os;
-        output_scale(dw, dh, widescreen_allowed(), SDL_GetTicksNS() / 1e9, game_ms, win_ms, &os);
+        // (wider than 16:9: false - LAS's camera patches widened Link's Awakening's view; DKCR's is the game's own)
+        output_scale(dw, dh, false, SDL_GetTicksNS() / 1e9, game_ms, win_ms, &os);
         double sx = os.sx, sy = os.sy, vx = os.vx, vy = os.vy, vw = os.vw, vh = os.vh, shape = os.shape;
         output_scale_log((unsigned long long)frame, dw, dh, &os);  // (diagnostics: [scale] on a change)
-        // interiors / dungeons: their 16:9 centre, or the part inside a room wider than one screen
-        extern void widescreen_present_crop(uint64_t, double, float *, double *, double *, double *, double *);
-        float crop[4];  // uv origin and size
-        widescreen_present_crop(frame, shape, crop, &vx, &vy, &vw, &vh);
-        widescreen_set_factor((float)shape);
+        float crop[4] = {0, 0, 1, 1};  // uv origin and size: the whole game image
+        (void)shape;
         extern void renderer_set_alloc_scale(float ax, float ay);
         renderer_set_alloc_scale((float)os.ax, (float)os.ay);
         renderer_set_scale((float)sx, (float)sy);
@@ -1952,12 +1946,8 @@ static void present_hooks(void) {
     if (slow_ms > 0 && total_frames > 2600 && (!slow_until || (long)total_frames < slow_until)) SDL_Delay((Uint32)slow_ms);
     extern void fnprof_frame(uint64_t frame);
     fnprof_frame(total_frames);
-    extern void warp_frame(uint64_t frame);
-    warp_frame(total_frames);
     extern void reboot_test_frame(uint64_t frame);  // runtime/main.c (LARECOMP_REBOOT_AT)
     reboot_test_frame(total_frames);
-    extern void save_editor_frame(uint64_t frame);
-    save_editor_frame(total_frames);
     extern void vk_level_change_check(void);
     vk_level_change_check();
     static long debug_at = -1;

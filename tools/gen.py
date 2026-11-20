@@ -530,13 +530,9 @@ def switch_on(expr):
 def rebase_patch(code):
     return PATCH_ADDR.sub(lambda m: gaddr(int(m.group(1), 16)), code) if lifter.DYN_BASE else code
 
-import json as _json
-import os as _os
-_rv = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), 'rando', 'patch_variants.json')
+# Instruction sites a runtime choice may swap ({main offset: [the words it may be]}, generated as a switch on
+# rando_word): LAS filled this from its randomizer's patch variants; DKCR has none.
 RANDO_CODE = {}
-if _os.path.exists(_rv):
-    for _a, _ws in _json.load(open(_rv))['code'].items():
-        RANDO_CODE[int(_a, 16)] = [int(_w, 16) for _w in _ws]
 
 
 def write_if_changed(path, text):
@@ -574,7 +570,7 @@ def main():
 
     t0 = time.time()
     m = Module(args.name, args.nso, args.base, args.simd)
-    global HOOKS, PATCHES, RANDO_CODE
+    global HOOKS, PATCHES
     lasgame = False
     if args.name == 'main':
         import game_addresses
@@ -588,10 +584,6 @@ def main():
             HOOKS, PATCHES = patches.HOOKS, patches.PATCHES
         label, build_id = game_addresses.VERSIONS[version]
         print(f'{args.name}: game version {label} (build {build_id[:16]}), address table {version}', file=sys.stderr)
-    if not lasgame:
-        # The randomizer's instruction sites (rando/patch_variants.json) are Link's Awakening main offsets; matched by
-        # offset alone they landed in DKCR's code (main+0x8d0e58: a branch to a function that was never generated).
-        RANDO_CODE = {}
     starts = m.boundaries()
     hle = {}
     if args.hle and os.path.exists(args.hle):

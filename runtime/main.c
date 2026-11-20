@@ -15,7 +15,6 @@
 #include "settings.h"
 #include "hle.h"
 #include "kernel.h"
-#include "rando.h"
 
 const char *g_romfs_dir;
 
@@ -142,8 +141,8 @@ void rt_request_reboot(int kind) {
 }
 int rt_reboot_requested(void) { return g_reboot; }
 
-// LARECOMP_REBOOT_AT=<frame>:<seed | vanilla | title>[,...] (test): at that presented frame, switch to the seed /
-// vanilla in place, or go back to the start screen (with LARECOMP_LAUNCHER_AUTOPLAY it plays the saved choice).
+// LARECOMP_REBOOT_AT=<frame>:<game | title>[,...] (test): at that presented frame, reboot the game in place, or go
+// back to the start screen (with LARECOMP_LAUNCHER_AUTOPLAY it plays the saved choice).
 // Frames count on across reboots. Called by the presenter every frame.
 void reboot_test_frame(uint64_t frame) {
     static const char *next;
@@ -155,9 +154,6 @@ void reboot_test_frame(uint64_t frame) {
     next = strchr(next, ',');
     if (next) next++;
     if (!strcmp(what, "title")) { rt_request_reboot(RT_REBOOT_TITLE); return; }
-    // (a test run: the next boot's seed without saving it - larecomp.ini is the player's choice)
-    strlcpy(g_settings.rando_seed, strcmp(what, "vanilla") ? what : "", sizeof g_settings.rando_seed);
-    unsetenv("LARECOMP_RANDO_SEED");
     rt_request_reboot(RT_REBOOT_GAME);
 }
 
@@ -234,7 +230,6 @@ static void boot(const char *root) {
         uint64_t p = loader_find_symbol("_ZN2nn2ro6detail36g_pLookupGlobalManualFunctionPointerE");
         if (p && !*(uint64_t *)p) *(uint64_t *)p = (uint64_t)(uintptr_t)hle_alloc(8);
     }
-    rando_boot();  // the chosen seed's data patches go into the freshly loaded module
     { extern void settings_load(void); settings_load(); }
     kernel_init();
     dispatch_init();
@@ -365,12 +360,6 @@ int main(int argc, char **argv) {
         else if (argv[i][0] != '-') root = arg_root;
     }
     rt_paths_init();  // the data root becomes the working directory (runtime/paths.h)
-    if (getenv("LARECOMP_MENU_SFX_TEST")) {  // (test: the menu sounds loaded now, each logged)
-        extern void menu_sfx_set_game_dir(const char *dir);
-        extern void menu_sfx_load_now(void);
-        menu_sfx_set_game_dir(root);
-        menu_sfx_load_now();
-    }
 #if LARECOMP_IOSEXPORT
     if (build_ios) {  // (the iOS export without the start screen: runtime/iosexport.c)
         extern bool iosexport_run_cli(const char *kit, const char *game_dir);

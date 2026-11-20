@@ -339,19 +339,6 @@ extern "C" void controls_tab_draw(float scale) {
     }
     take_focus(FOCUS_CONFIGURE);
 
-    opt_section("Movement");
-    {
-        static const char *const modes[] = {LN("Nothing"), LN("Items"), LN("Movement")};
-        opt_choice("D-pad", &g_settings.dpad_mode, modes, 3, DPAD_NOTHING, "What the D-pad does in play.");
-    }
-    opt_toggle("360-degree movement", &g_settings.move_360, false,
-               "Link walks in the exact direction of the stick instead of snapping to 8 directions.");
-    opt_child_begin(g_settings.move_360);
-    if (!g_settings.move_360) opt_disable_next(), opt_needs_next("360-degree movement");
-    opt_toggle("Hookshot aims in 8 directions", &g_settings.hookshot_8way, false,
-               "The hookshot fires straight along the nearest of 8 directions, even with 360-degree movement.");
-    opt_child_end();
-
     opt_section("Controller");
     opt_toggle("Rumble", &g_settings.rumble, true, "Controller vibration.");
     {
