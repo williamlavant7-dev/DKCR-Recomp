@@ -1047,6 +1047,10 @@ void kernel_dump_threads(const char *prefix) {
         if (!t->started || t->finished) continue;
         bool waiting = t->wait_kind != WAIT_NONE || t->in_sync_wait;
         const char *hle = hle_name_at(t->cpu.pc);  // (pc: the last call through dispatch; an HLE one: its name)
+        // (paused: svcSetThreadActivity - asked, and parked at a safe point or in an svc)
+        if (t->suspend_req || t->parked)
+            LOG("%s thread %llu: PAUSED (asked %d, parked %d, in svc %d)\n", prefix, (unsigned long long)t->id,
+                t->suspend_req, t->parked, __atomic_load_n(&t->in_svc, __ATOMIC_RELAXED));
         LOG("%s thread %llu h %x prio %d core %d entry %llx pc %llx%s%s%s lr %llx wait %s addr %llx mutex %llx tag %x%s%s for %llu ms\n",
             prefix, (unsigned long long)t->id, t->handle, t->prio, t->core, (unsigned long long)t->entry,
             (unsigned long long)t->cpu.pc, hle ? " (" : "", hle ? hle : "", hle ? ")" : "", (unsigned long long)t->cpu.x[30],
