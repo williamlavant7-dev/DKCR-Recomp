@@ -7618,11 +7618,30 @@ static void copy_buffer_to_texture(uint64_t src, const TexRefRec *dst) {
             if (out_bpb == fi->bpb) memcpy(dr, sr, out_row);
             else for (uint32_t x = 0; x < wb; x++) { memcpy(dr + x * 4, sr + x * 3, 3); dr[x * 4 + 3] = 255; }
         }
+    // The region stays inside the image's level. On the Switch a texture's storage is padded to whole GOBs (64-byte
+    // rows), so a region running past the texture's edge lands in that padding, unseen: DKCR's Unity copies a 32-texel
+    // wide region into a 21x12 RGBA8 texture. Our image is the texture's exact size, and the same copy wrote past it:
+    // the GPU's device was lost on the first frames. The rows keep the game's pitch (bufferRowLength); only what lies
+    // inside the level is copied.
+    uint32_t lw = b->width >> level ? b->width >> level : 1, lh = b->height >> level ? b->height >> level : 1;
+    uint32_t ld = b->depth > 1 ? (b->depth >> level ? b->depth >> level : 1) : 1;
+    if (rg[0] < 0 || rg[1] < 0 || rg[2] < 0 || (uint32_t)rg[0] >= lw || (uint32_t)rg[1] >= lh ||
+        (!array && (uint32_t)rg[2] >= ld))
+        return;
+    uint32_t cw = (uint32_t)rg[3] < lw - (uint32_t)rg[0] ? (uint32_t)rg[3] : lw - (uint32_t)rg[0];
+    uint32_t ch = (uint32_t)rg[4] < lh - (uint32_t)rg[1] ? (uint32_t)rg[4] : lh - (uint32_t)rg[1];
+    uint32_t cz = array ? 1 : (nz < ld - (uint32_t)rg[2] ? nz : ld - (uint32_t)rg[2]);
+    if (cw != (uint32_t)rg[3] || ch != (uint32_t)rg[4]) {
+        static int nlog;
+        if (nlog++ < 5)
+            LOG("[vk] buffer -> texture copy %dx%d at %d,%d clamped to the %ux%u level %d (%ux%u)\n", rg[3], rg[4], rg[0],
+                rg[1], lw, lh, level, cw, ch);
+    }
     VkBufferImageCopy c = {.bufferOffset = s.off, .bufferRowLength = wb * fi->bw, .bufferImageHeight = hb * fi->bh,
                            .imageSubresource = {b->aspect & VK_IMAGE_ASPECT_DEPTH_BIT ? VK_IMAGE_ASPECT_DEPTH_BIT : b->aspect,
                                                 (uint32_t)level, array ? (uint32_t)rg[2] : 0, array ? nz : 1},
                            .imageOffset = {rg[0], rg[1], array ? 0 : rg[2]},
-                           .imageExtent = {(uint32_t)rg[3], (uint32_t)rg[4], array ? 1 : nz}};
+                           .imageExtent = {cw, ch, cz}};
     rec_CmdCopyBufferToImage(cb, s.buf, b->image, VK_IMAGE_LAYOUT_GENERAL, 1, &c);
 }
 

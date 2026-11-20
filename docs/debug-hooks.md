@@ -166,6 +166,9 @@ All of these write to the log (`lasrecomp.log` in the data folder, or the run's 
 | `LARECOMP_LOG_HITCH_MS` | ms | Log every gap between presents longer than this. |
 | `LARECOMP_SLOW_FRAME_MS` | ms | Log a `[slow]` line for frames slower than this, with what the renderer did (default 50, 0 off). |
 | `LARECOMP_HANG_DUMP` | seconds | Write a `[hang]` dump when the game or renderer is stuck this long (default 30, 0 off). |
+| `LARECOMP_HANG_REGS` | 1 | In the `[hang]` dump: each thread's registers as its wait left them. |
+| `LARECOMP_HANG_FINDPTR` | hex value | In the `[hang]` dump: where an 8-byte word equal to it lies, within 16 MB of it (what points to an object, e.g. a semaphore's owner). |
+| `LARECOMP_HANG_MEM` | `addr,len;...` (hex) | In the `[hang]` dump: those ranges of guest memory. |
 | `LARECOMP_LOG_FILES` | 1 | Log each game file read. |
 | `LARECOMP_LOG_LEVELREQ` | 1 | Log each level change request (level and spawn point). |
 | `LARECOMP_LOG_LINK` | frames | Log Link's position every N frames. |

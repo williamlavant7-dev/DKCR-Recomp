@@ -1075,6 +1075,39 @@ void kernel_dump_threads(const char *prefix) {
             if (up <= fp) break;
             fp = up;
         }
+        if (getenv("LARECOMP_HANG_REGS")) {  // (debug) LARECOMP_HANG_REGS=1: the registers as the wait left them
+            for (int r = 0; r < 31; r += 4)
+                LOG("%s   x%-2d %llx %llx %llx %llx\n", prefix, r, (unsigned long long)t->cpu.x[r],
+                    (unsigned long long)t->cpu.x[r + 1 < 31 ? r + 1 : 30], (unsigned long long)t->cpu.x[r + 2 < 31 ? r + 2 : 30],
+                    (unsigned long long)t->cpu.x[r + 3 < 31 ? r + 3 : 30]);
+            LOG("%s   sp %llx\n", prefix, (unsigned long long)t->cpu.sp);
+        }
+    }
+    // (debug) LARECOMP_HANG_FINDPTR=<hex value>: the 8-byte words equal to it within 16 MB of it (what points to an
+    // object: a semaphore's owner); LARECOMP_HANG_MEM=<hex addr>,<hex len>;...: guest memory. Both in the [hang] dump.
+    if (getenv("LARECOMP_HANG_FINDPTR")) {
+        unsigned long long v = strtoull(getenv("LARECOMP_HANG_FINDPTR"), NULL, 16);
+        uint64_t lo = v > GUEST_LO + 0x1000000 ? (v - 0x1000000) & ~7ull : GUEST_LO, hi = v + 0x1000000 < GUEST_HI ? v + 0x1000000 : GUEST_HI;
+        int found = 0;
+        for (int i = 0; i < nregions && found < 16; i++) {  // (only mapped regions: a stray touch would commit memory)
+            uint64_t a = regions[i].addr > lo ? regions[i].addr : lo, e = regions[i].addr + regions[i].size;
+            for (e = e < hi ? e : hi; a + 8 <= e && found < 16; a += 8)
+                if (*(const uint64_t *)(uintptr_t)a == v) LOG("%s ptr to %llx at %llx\n", prefix, v, (unsigned long long)a), found++;
+        }
+    }
+    if (getenv("LARECOMP_HANG_MEM")) {
+        const char *p = getenv("LARECOMP_HANG_MEM");
+        unsigned long long a, n;
+        int used;
+        while (sscanf(p, "%llx,%llx%n", &a, &n, &used) == 2) {
+            for (unsigned long long o = 0; o < n && a + o >= GUEST_LO && a + o + 16 <= GUEST_HI; o += 16) {
+                const uint32_t *w = (const uint32_t *)(uintptr_t)(a + o);
+                LOG("%s mem %llx: %08x %08x %08x %08x\n", prefix, a + o, w[0], w[1], w[2], w[3]);
+            }
+            p += used;
+            if (*p != ';') break;
+            p++;
+        }
     }
     {   // the kernel trace: oldest first
         static const char *const kn[] = {"cv-wait", "cv-wait-end", "cv-signal", "arb-lock", "arb-lock-end", "arb-unlock"};

@@ -74,9 +74,15 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0);
 #define ST64(a, v) (*(u64u *)(uintptr_t)(a) = (uint64_t)(v))
 
 // ---- exclusive monitor (emulated with compare-and-swap)
+// The ordered accesses (LDAR / LDAXR / STLR) are sequentially consistent, not C11 acquire / release: on ARMv8 a
+// store-release is never passed by a later load-acquire (RCsc), while C11's release store and acquire load allow it -
+// on x86 a release store is a plain mov, and a later load passes it. DKCR's Unity relies on the ARM order in its
+// sleep handshakes ("I'm waiting" stored, then the queue read again; the other side stores the queue, then reads the
+// flag): with release / acquire both sides read before the other's store was seen, neither woke the other, and the
+// game froze before its first frames (more often the faster it ran). A seq_cst store is xchg on x86; loads are movs.
 #define EXCL(N, T)                                                                         \
     static inline uint64_t ldx##N(Cpu *c, uint64_t a) {                                    \
-        T v = __atomic_load_n((T *)(uintptr_t)a, __ATOMIC_ACQUIRE);                        \
+        T v = __atomic_load_n((T *)(uintptr_t)a, __ATOMIC_SEQ_CST);                        \
         c->excl_addr = a;                                                                  \
         c->excl_val = v;                                                                   \
         return v;                                                                          \
@@ -89,10 +95,10 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0);
                                             __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);           \
     }                                                                                      \
     static inline uint64_t lda##N(uint64_t a) {                                            \
-        return __atomic_load_n((T *)(uintptr_t)a, __ATOMIC_ACQUIRE);                       \
+        return __atomic_load_n((T *)(uintptr_t)a, __ATOMIC_SEQ_CST);                       \
     }                                                                                      \
     static inline void stl##N(uint64_t a, uint64_t v) {                                    \
-        __atomic_store_n((T *)(uintptr_t)a, (T)v, __ATOMIC_RELEASE);                       \
+        __atomic_store_n((T *)(uintptr_t)a, (T)v, __ATOMIC_SEQ_CST);                       \
     }
 EXCL(8, uint8_t)
 EXCL(16, uint16_t)
