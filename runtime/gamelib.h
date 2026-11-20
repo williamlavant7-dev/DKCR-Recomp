@@ -27,7 +27,7 @@
 #ifndef GAMELIB_ID
 #define GAMELIB_ID "dev"
 #endif
-#define GAMELIB_ABI 1
+#define GAMELIB_ABI 2  // (2: DKCR's third module, subsdk0)
 #define GAMELIB_FULL_ID_SIZE 96
 
 // The id a library for the game files in game_dir has (<id>-<build ID>, id = GAMELIB_ID, or the iOS build's for an
@@ -55,6 +55,9 @@ typedef struct {
     const uint64_t *main_addrs, *sdk_addrs;  // sorted guest addresses
     const GuestFn *main_fns, *sdk_fns;       // the functions at them
     const uint64_t *main_count, *sdk_count;
+    const uint64_t *subsdk0_addrs;  // DKCR's subsdk0 (GAMELIB_ABI 2), the same way
+    const GuestFn *subsdk0_fns;
+    const uint64_t *subsdk0_count;
 } GameLibTables;
 
 // The library's one exported function (tools/gamelib_entry.c).

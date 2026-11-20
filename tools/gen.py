@@ -103,7 +103,25 @@ class Module:
         r = self._jump_table_fallthrough(br_pc, entry, end)
         if r is None:
             r = self._jump_table_taken(br_pc, entry, end)
+        if r is None:
+            r = self._jump_table_masked(br_pc, entry, end)
         return r
+
+    def _jump_table_masked(self, br_pc, entry, end):
+        """Form: and idx, x, #(2^k - 1) ; <address math> ; br - no bounds check, the mask is the bound (DKCR's
+        newer compiler: an unrolled hash tail, `and x12, x2, #0xf` picking one of 16 entries)."""
+        s = br_pc
+        while s - 4 >= entry and br_pc - (s - 4) <= 4 * 16 and self.lift(s - 4).kind in ('op', 'asm'):
+            s -= 4
+        for a in range(br_pc - 4, s - 4, -4):
+            w = self.word(a)
+            if (w & 0x7F800000) != 0x12000000 or bits(w, 16, 6):  # AND (imm), immr = 0: a low mask
+                continue
+            sf, n, imms = bits(w, 31, 1), bits(w, 22, 1), bits(w, 10, 6)
+            if n != sf or (not sf and imms >= 31) or imms >= 12:  # (up to 4096 entries)
+                continue
+            return self._emulate_table(br_pc, entry, end, s, w & 31, 1 << (imms + 1), a + 4)
+        return None
 
     def _index_regs(self, start, at, idx):
         """The index register plus registers holding the same value in start..at: sources it was
@@ -556,17 +574,24 @@ def main():
 
     t0 = time.time()
     m = Module(args.name, args.nso, args.base, args.simd)
+    global HOOKS, PATCHES, RANDO_CODE
+    lasgame = False
     if args.name == 'main':
-        global HOOKS, PATCHES
         import game_addresses
         try:
             version = game_addresses.select_build_id(m.nso.build_id)
         except game_addresses.UnknownGameVersion as e:
             sys.exit(f'{args.name}: {e}')
-        import patches
-        HOOKS, PATCHES = patches.HOOKS, patches.PATCHES
+        lasgame = version != 'dkcr'
+        if lasgame:  # (DKCR has no code patches yet: tools/patches.py's sites are Link's Awakening's)
+            import patches
+            HOOKS, PATCHES = patches.HOOKS, patches.PATCHES
         label, build_id = game_addresses.VERSIONS[version]
         print(f'{args.name}: game version {label} (build {build_id[:16]}), address table {version}', file=sys.stderr)
+    if not lasgame:
+        # The randomizer's instruction sites (rando/patch_variants.json) are Link's Awakening main offsets; matched by
+        # offset alone they landed in DKCR's code (main+0x8d0e58: a branch to a function that was never generated).
+        RANDO_CODE = {}
     starts = m.boundaries()
     hle = {}
     if args.hle and os.path.exists(args.hle):
@@ -592,7 +617,13 @@ def main():
             imm = ((w >> 5) & 0x7FFFF) << 2 | ((w >> 29) & 3)
             if imm & (1 << 20):
                 imm -= 1 << 21
-            if m.in_text(pc + imm):
+            # A jump table's base (adr xD, base ; ldrb/ldrh ; add xD, xD, wI, lsl #2 ; br xD, up to 16 words on) isn't a function:
+            # DKCR's newer compiler puts the base right after the br (vfprintf's format switch), and a start there
+            # cut the function at the table, leaving every case outside it and the table unresolved.
+            rd = w & 31
+            feeds_br = any((m.words[j] & 0xFFFFFC1F) == 0xD61F0000 and (m.words[j] >> 5) & 31 == rd
+                           for j in range(i + 1, min(i + 17, len(m.words))))  # (hash tails: 11 words on)
+            if m.in_text(pc + imm) and not feeds_br:
                 start_set.add(pc + imm)
         elif (w & 0x9F000000) == 0x90000000:  # ADRP
             imm = ((w >> 5) & 0x7FFFF) << 2 | ((w >> 29) & 3)

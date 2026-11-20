@@ -80,7 +80,7 @@ GENFLAGS := $(GENFLAGS_BASE)
 # the app itself holds none of it
 # (strip: with no generated code the space between the two would be all that's left, and $(if) takes a lone space as
 # true. No comment after the value: make keeps the spaces before it)
-GEN_SRC  := $(strip $(wildcard $(GEN)/main/*.c) $(wildcard $(GEN)/sdk/*.c))
+GEN_SRC  := $(strip $(wildcard $(GEN)/main/*.c) $(wildcard $(GEN)/subsdk0/*.c) $(wildcard $(GEN)/sdk/*.c))
 GEN_OBJ  := $(patsubst %.c,$(B)/obj/%.o,$(patsubst $(GEN)/%,%,$(GEN_SRC))) $(B)/obj/tools/gamelib_entry.o
 RT_SRC   := $(wildcard runtime/*.c runtime/*.cpp) $(wildcard runtime/hle/*.c) $(wildcard runtime/services/*.c) \
             $(wildcard runtime/nvn/*.c) $(wildcard runtime/nvn/maxwell/*.c) runtime/platform/$(PLATFORM).c
@@ -194,6 +194,9 @@ GAMELIB  := $(B)/lasgame.dll
 # the runtime functions it calls: exported by the .exe, linked through its import library
 LDFLAGS  += -Wl,--export-all-symbols -Wl,--out-implib,$(B)/lasrecomp.dll.a
 GAMELIB_LDFLAGS := -shared -fuse-ld=lld $(B)/lasrecomp.dll.a
+# clang hands DKCR's long link line to lld in a response file in %TMP%, which can reach make's recipes empty
+# ("unable to make temporary file"): the link gets a temp folder of its own.
+GAMELIB_TMPENV = mkdir -p $(B)/tmp && TMP="$$(cygpath -w "$(abspath $(B))/tmp")" TEMP="$$(cygpath -w "$(abspath $(B))/tmp")"
 GAMELIB_SHARED := -shared  # (+ the import library: runtime/gamebuild.c)
 endif
 
@@ -299,7 +302,8 @@ $(EXE): $(RT_OBJ) $(BACKEND_OBJ) $(UI_OBJ) $(IMGUI_OBJ) $(MINIZ_OBJ)
 
 # its id file (<library>.id) says what it was built from without loading it (runtime/gamelib.c)
 $(GAMELIB): $(GEN_OBJ) | $(EXE)
-	$(CC) $(GAMELIB_LDFLAGS) -o $@.tmp $^
+	$(file >$@.objs,$^)
+	$(GAMELIB_TMPENV) $(CC) $(GAMELIB_LDFLAGS) -o $@.tmp @$@.objs  # (a response file: DKCR's ~1950 objects pass Windows' command-line limit)
 	mv -f $@.tmp $@
 	echo $(GAMELIB_FULL_ID) > $@.id
 
@@ -332,9 +336,14 @@ $(B)/rt/zipfile.o: RTFLAGS += -I$(MINIZ)
 # Python: tools/venv (macOS, Linux: bin/python, Windows: Scripts/python.exe)
 PY := $(firstword $(wildcard tools/venv/bin/python) $(wildcard tools/venv/Scripts/python.exe))
 
+# GAME: the folder with the player's own game files (exefs/, romfs/), e.g. `make gen GAME=..`. The bases are
+# runtime/rt.h's MAIN_BASE, SUBSDK0_BASE and SDK_BASE.
+GAME ?= extracted
+GAME_EXEFS := $(abspath $(GAME))/exefs
 gen:
-	cd tools && ../$(PY) gen.py sdk ../extracted/exefs/sdk 0x7004000000 ../$(GEN)/sdk --hle ../runtime/hle/hle_symbols.txt $(GENSIMD)
-	cd tools && ../$(PY) gen.py main ../extracted/exefs/main 0x7000000000 ../$(GEN)/main $(GENSIMD)
+	cd tools && ../$(PY) gen.py sdk "$(GAME_EXEFS)/sdk" 0x7008000000 ../$(GEN)/sdk --hle ../runtime/hle/hle_symbols.txt $(GENSIMD)
+	cd tools && ../$(PY) gen.py subsdk0 "$(GAME_EXEFS)/subsdk0" 0x7007000000 ../$(GEN)/subsdk0 $(GENSIMD)
+	cd tools && ../$(PY) gen.py main "$(GAME_EXEFS)/main" 0x7000000000 ../$(GEN)/main $(GENSIMD)
 
 gen-objs: $(GEN_OBJ)
 

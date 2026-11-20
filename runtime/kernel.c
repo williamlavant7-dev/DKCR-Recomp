@@ -114,6 +114,7 @@ typedef struct { uint64_t addr, size; uint32_t type, perm; } Region;
 static Region regions[1024];
 static int nregions;
 static uint64_t heap_size;
+uint64_t g_system_resource_size;  // (main.c, from main.npdm)
 static uint64_t tls_used;  // (from TLS_BASE: an offset, as the window can move - rt.h)
 uint64_t kernel_heap_size(void) { return heap_size; }  // bytes from HEAP_BASE set by SetHeapSize
 // Writable guest data regions (heap, mapped/physical memory, module .data): for debug/runtime memory scans.
@@ -183,9 +184,101 @@ static uint64_t next_thread_id = 0x50;
 volatile int g_rt_unwind;
 static KThread *g_threads;  // every thread of this boot (g_klock)
 
+// Pausing threads (svcSetThreadActivity). DKCR's Unity garbage collector stops the world: nn::os::SuspendThread on
+// every other thread, GetThreadContext3 to scan their registers, then resume. Recompiled code can't be stopped at an
+// arbitrary instruction with its registers known (the compiler keeps guest registers in host ones), so a paused
+// thread stops at its next safe point - the same ones a reboot unwinds at - where every guest register is in its
+// Cpu. A thread inside an svc (kernel waits included) already is at one: it counts as stopped at once and parks on
+// its way out. svcSetThreadActivity returns once the thread is stopped, so GetThreadContext3 right after reads it.
+static pthread_cond_t g_suspend_cond = PTHREAD_COND_INITIALIZER;  // (g_klock) a thread parked or was resumed
+static int g_suspend_reqs;  // threads asked to pause, for a cheap check at every safe point (__atomic)
+
+static void suspend_point(KThread *t) {
+    if (!__atomic_load_n(&t->suspend_req, __ATOMIC_SEQ_CST)) return;
+    pthread_mutex_lock(&g_klock);
+    t->parked = true;
+    pthread_cond_broadcast(&g_suspend_cond);
+    while (__atomic_load_n(&t->suspend_req, __ATOMIC_SEQ_CST) && !g_rt_unwind) pthread_cond_wait(&g_suspend_cond, &g_klock);
+    t->parked = false;
+    pthread_mutex_unlock(&g_klock);
+}
+
 void rt_unwind_point(void) {
     if (__builtin_expect(g_rt_unwind, 0) && t_cur) longjmp(t_cur->unwind, 1);
+    if (__builtin_expect(__atomic_load_n(&g_suspend_reqs, __ATOMIC_RELAXED), 0) && t_cur) {
+        suspend_point(t_cur);
+        if (g_rt_unwind) longjmp(t_cur->unwind, 1);
+    }
 }
+
+// Whether t is stopped (or can't run guest code): parked, inside an svc, not started or finished. g_klock held.
+static bool thread_stopped(KThread *t) {
+    return t->parked || __atomic_load_n(&t->in_svc, __ATOMIC_SEQ_CST) || !t->started || t->finished;
+}
+
+static uint32_t set_thread_activity(KThread *t, uint64_t activity) {
+    if (activity > 1) return R_INVALID_ENUM;
+    pthread_mutex_lock(&g_klock);
+    bool was = t->suspend_req;
+    if (activity == 1 && !was) {
+        __atomic_store_n(&t->suspend_req, true, __ATOMIC_SEQ_CST);
+        __atomic_add_fetch(&g_suspend_reqs, 1, __ATOMIC_SEQ_CST);
+    } else if (activity == 0 && was) {
+        __atomic_store_n(&t->suspend_req, false, __ATOMIC_SEQ_CST);
+        __atomic_sub_fetch(&g_suspend_reqs, 1, __ATOMIC_SEQ_CST);
+        pthread_cond_broadcast(&g_suspend_cond);
+    }
+    // Pausing another thread: wait until it is stopped. in_svc is set without the lock (every svc passes there), so
+    // the wait wakes every millisecond to look again. Pausing itself: the caller is in this svc, and parks on its way out.
+    if (activity == 1 && t != t_cur) {
+        uint64_t t0 = plat_now_ns();
+        bool warned = false;
+        while (!thread_stopped(t) && !g_rt_unwind) {
+            struct timespec ts;
+            clock_gettime(CLOCK_REALTIME, &ts);
+            ts.tv_nsec += 1000000;
+            if (ts.tv_nsec >= 1000000000) ts.tv_sec++, ts.tv_nsec -= 1000000000;
+            pthread_cond_timedwait(&g_suspend_cond, &g_klock, &ts);
+            if (!warned && plat_now_ns() - t0 > 2000000000ull) {  // (a guest loop with no safe point in it)
+                warned = true;
+                LOG("[kernel] pausing thread %llu: still running after 2 s (pc %llx)\n", (unsigned long long)t->id,
+                    (unsigned long long)t->cpu.pc);
+            }
+        }
+    }
+    pthread_mutex_unlock(&g_klock);
+    return R_OK;
+}
+
+// GetThreadContext3: the Switch's ThreadContext (0x320 bytes) of a stopped thread.
+static uint32_t get_thread_context(uint64_t out, KThread *t) {
+    pthread_mutex_lock(&g_klock);
+    bool ok = t != t_cur && thread_stopped(t);
+    pthread_mutex_unlock(&g_klock);
+    if (!ok) return 0xEA01;  // (not stopped: the kernel's "invalid state")
+    uint8_t *o = (uint8_t *)(uintptr_t)out;
+    const Cpu *c = &t->cpu;
+    memset(o, 0, 0x320);
+    memcpy(o, c->x, 29 * 8);                                   // x0-x28
+    memcpy(o + 0xE8, &c->x[29], 8);                            // fp
+    memcpy(o + 0xF0, &c->x[30], 8);                            // lr
+    memcpy(o + 0xF8, &c->sp, 8);
+    uint64_t pc = __atomic_load_n(&t->in_svc, __ATOMIC_SEQ_CST) ? t->svc_pc + 4 : c->pc;
+    memcpy(o + 0x100, &pc, 8);
+    uint32_t pstate = (uint32_t)c->nzcv, fpcr = (uint32_t)c->fpcr, fpsr = (uint32_t)c->fpsr;
+    memcpy(o + 0x108, &pstate, 4);
+    memcpy(o + 0x110, c->v, 32 * 16);
+    memcpy(o + 0x310, &fpcr, 4);
+    memcpy(o + 0x314, &fpsr, 4);
+    memcpy(o + 0x318, &c->tpidr, 8);
+    return R_OK;
+}
+
+// Guest threads not yet finished (GetInfo 24, free thread count). Under g_klock.
+static int g_live_threads;
+// An assumed thread limit for the game's process: not measured on hardware. DKCR's SDK asks for the free count
+// (GetInfo 24) and stops when it gets no answer; nothing seen so far depends on the exact number.
+#define THREAD_LIMIT 96
 
 static void *thread_main(void *arg) {
     KThread *t = arg;
@@ -194,9 +287,13 @@ static void *thread_main(void *arg) {
     if (t->is_main) plat_thread_perf_core(PLAT_PERF_GAME);  // (the game's frame runs here)
     crash_handler_install();
     rt_set_fpcr(0);
-    if (!setjmp(t->unwind)) guest_call(&t->cpu, t->entry);
+    if (!setjmp(t->unwind)) {
+        suspend_point(t);  // (paused before it started: it starts when resumed)
+        guest_call(&t->cpu, t->entry);
+    }
     pthread_mutex_lock(&g_klock);
     t->finished = true;
+    g_live_threads--;
     kernel_signal(&t->obj);
     pthread_mutex_unlock(&g_klock);
     t_cur = NULL;
@@ -216,6 +313,7 @@ static KThread *thread_new(uint64_t entry, uint64_t arg, uint64_t stack_top, int
     t->cpu.thread = t;
     pthread_mutex_lock(&g_klock);  // (two guest threads may create threads at once: one id and TLS slot each)
     t->id = next_thread_id++;
+    g_live_threads++;
     t->tlr = TLS_BASE + tls_used;
     tls_used += 0x200;
     t->cpu.tpidrro = t->tlr;
@@ -262,8 +360,8 @@ KThread *kernel_create_main_thread(uint64_t entry, uint64_t stack_size, int prio
 static KThread *g_main_thread;  // (g_klock) for hang_watch
 static void *hang_watch(void *arg);
 
-void kernel_run_main(KThread *t, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3) {
-    t->cpu.x[0] = x0; t->cpu.x[1] = x1; t->cpu.x[2] = x2; t->cpu.x[3] = x3;
+void kernel_run_main(KThread *t, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3, uint64_t x4) {
+    t->cpu.x[0] = x0; t->cpu.x[1] = x1; t->cpu.x[2] = x2; t->cpu.x[3] = x3; t->cpu.x[4] = x4;
     thread_start(t);  // the host main thread goes on to run the window event loop
     pthread_mutex_lock(&g_klock);
     g_main_thread = t;
@@ -607,7 +705,13 @@ static int prof_svc = -1;
 static void svc_entry(Cpu *c, uint32_t imm, uint64_t pc);
 void rt_svc(Cpu *c, uint32_t imm, uint64_t pc) {
     rt_unwind_point();
+    KThread *t = t_cur;
+    if (t) {  // (stopped while in here: a pause request on the way out parks it below)
+        t->svc_pc = pc;
+        __atomic_store_n(&t->in_svc, true, __ATOMIC_SEQ_CST);
+    }
     svc_entry(c, imm, pc);
+    if (t) __atomic_store_n(&t->in_svc, false, __ATOMIC_SEQ_CST);
     rt_unwind_point();
 }
 
@@ -842,9 +946,18 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         case 13: v = GUEST_HI - GUEST_LO; break;
         case 14: v = STACK_BASE; break;
         case 15: v = STACK_SIZE; break;
-        case 16: case 17: v = 0; break;
-        case 18: v = 0x01006BB00C6F0000ull; break;
+        // The system resource size in main.npdm (DKCR: 16 MB; LAS: none). nn::os turns its address-space manager
+        // (VammManager) on when this is nonzero, and Unity's nn::os::AllocateAddressRegion needs it on.
+        case 16: v = g_system_resource_size; break;
+        case 17: v = 0; break;
+        case 18: v = 0x01009D901BC56000ull; break;  // the program ID (DKCR HD's, as in its main.npdm)
         case 20: v = 0; break;
+        case 24:  // free thread count (DKCR's newer SDK asks)
+            pthread_mutex_lock(&g_klock);
+            v = g_live_threads < THREAD_LIMIT ? (uint64_t)(THREAD_LIMIT - g_live_threads) : 0;
+            pthread_mutex_unlock(&g_klock);
+            break;
+        case 28: v = 0; break;  // alias region extra size (firmware 18+; DKCR's newer SDK asks): none, as for a game
         default: r = R_INVALID_ENUM; LOG("[kernel] GetInfo unknown id %u/%llu\n", id0, x[3]);
         }
         x[0] = r;
@@ -860,6 +973,13 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         region_remove(x[0]);
         x[0] = R_OK;
         break;
+    case 0x32: case 0x33: {  // SetThreadActivity(handle, activity) / GetThreadContext3(out, handle)
+        KObject *o = handle_get((uint32_t)(imm == 0x32 ? x[0] : x[1]));
+        if (!o || o->type != KOBJ_THREAD) { x[0] = 0xE401; break; }  // (invalid handle)
+        KThread *th = (KThread *)o;
+        x[0] = imm == 0x32 ? set_thread_activity(th, x[1]) : get_thread_context(x[0], th);
+        break;
+    }
     case 0x34: x[0] = svc_wait_for_address(x[0], (uint32_t)x[1], (int32_t)x[2], (int64_t)x[3]); break;
     case 0x35: x[0] = svc_signal_to_address(x[0], (uint32_t)x[1], (int32_t)x[2], (int32_t)x[3]); break;
     case 0x45: {  // CreateEvent -> w1 writable, w2 readable

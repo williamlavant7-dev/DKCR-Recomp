@@ -8,13 +8,9 @@
 #include "rt.h"
 
 #define GA_ADDR(name, value) .name = UINT64_C(value),
-static const GameAddrs ga_v1_0_0 = {
-#include "game_addresses/patches_v1_0_0.h"
-#include "game_addresses/runtime_v1_0_0.h"
-};
-static const GameAddrs ga_v1_0_1 = {
-#include "game_addresses/patches_v1_0_1.h"
-#include "game_addresses/runtime_v1_0_1.h"
+static const GameAddrs ga_dkcr = {
+#include "game_addresses/patches_dkcr.h"
+#include "game_addresses/runtime_dkcr.h"
 };
 #undef GA_ADDR
 
@@ -95,7 +91,7 @@ bool game_version_select(const char *game_dir, char *why, size_t why_size) {
     const GameVersion *v = game_version_by_build_id(id);
     if (!v) {
         snprintf(why, why_size, "these game files are an unsupported version of the game (main build ID "
-                 "%02X%02X%02X%02X%02X%02X%02X%02X): LAS Recomp needs version 1.0.0, 1.0.1 or 1.1.0",
+                 "%02X%02X%02X%02X%02X%02X%02X%02X): this needs Donkey Kong Country Returns HD",
                  id[0], id[1], id[2], id[3], id[4], id[5], id[6], id[7]);
         return false;
     }

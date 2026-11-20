@@ -5,6 +5,7 @@ import lz4.block
 
 DT_NULL, DT_NEEDED, DT_PLTRELSZ, DT_HASH, DT_STRTAB, DT_SYMTAB, DT_RELA, DT_RELASZ = 0, 1, 2, 4, 5, 6, 7, 8
 DT_STRSZ, DT_JMPREL, DT_RELACOUNT = 10, 23, 0x6FFFFFF9
+DT_RELRSZ, DT_RELR = 35, 36
 R_AARCH64_ABS64, R_AARCH64_GLOB_DAT, R_AARCH64_JUMP_SLOT, R_AARCH64_RELATIVE = 257, 1025, 1026, 1027
 
 
@@ -75,6 +76,22 @@ class Nso:
                 for i in range(n):
                     r_off, r_info, r_add = struct.unpack_from('<QQq', self.image, b + i * 24)
                     self.relocs.append((r_off, r_info & 0xFFFFFFFF, r_info >> 32, r_add))
+        # RELR (DKCR's newer SDK): packed relative relocations, listed as R_RELATIVE with the place's own value as the
+        # addend (as runtime/loader.c applies them). Vtables live here, so their functions are found as starts.
+        if DT_RELR in dyn:
+            b, where = dyn[DT_RELR], None
+            for i in range(dyn.get(DT_RELRSZ, 0) // 8):
+                e = self.u64(b + i * 8)
+                if not e & 1:
+                    self.relocs.append((e, R_AARCH64_RELATIVE, 0, self.u64(e)))
+                    where = e + 8
+                    continue
+                bits, j = e >> 1, 0
+                while bits:
+                    if bits & 1:
+                        self.relocs.append((where + j * 8, R_AARCH64_RELATIVE, 0, self.u64(where + j * 8)))
+                    bits, j = bits >> 1, j + 1
+                where += 63 * 8
 
     def cstr(self, off):
         end = self.image.index(b'\0', off)

@@ -9,7 +9,8 @@
 #include "hle.h"
 
 typedef struct { const uint64_t *addrs; const GuestFn *fns; uint64_t count, lo, hi; } FnTable;
-static FnTable tables[2];
+enum { NTABLES = 3 };  // main, sdk, subsdk0 (DKCR's video player)
+static FnTable tables[NTABLES];
 
 // HLE stubs live at fake addresses HLE_BASE + 16*i
 #define MAX_HLE 4096
@@ -114,27 +115,25 @@ void *hle_alloc(uint64_t size) {
 
 void dispatch_init(void) {  // (after gamelib_load)
     const GameLibTables *g = gamelib_tables();
-    uint64_t nm = *g->main_count, ns = *g->sdk_count;
+    const uint64_t *src[NTABLES] = {g->main_addrs, g->sdk_addrs, g->subsdk0_addrs};
+    const GuestFn *fns[NTABLES] = {g->main_fns, g->sdk_fns, g->subsdk0_fns};
+    const uint64_t cnt[NTABLES] = {*g->main_count, *g->sdk_count, *g->subsdk0_count};
 #ifdef LARECOMP_DYN_BASE
     // The library lists the game's own addresses (gen.py --dyn-base): moved to where the window is (rt.h).
-    static uint64_t *moved[2];
-    const uint64_t *src[2] = {g->main_addrs, g->sdk_addrs}, cnt[2] = {nm, ns};
-    for (int t = 0; t < 2; t++) {
+    static uint64_t *moved[NTABLES];
+    for (int t = 0; t < NTABLES; t++) {
         free(moved[t]);
         moved[t] = malloc(cnt[t] * sizeof *moved[t]);
         if (!moved[t]) FATAL("out of memory\n");
         for (uint64_t i = 0; i < cnt[t]; i++) moved[t][i] = src[t][i] - GUEST_CANON + GUEST_LO;
+        src[t] = moved[t];
     }
-    tables[0] = (FnTable){moved[0], g->main_fns, nm, moved[0][0], moved[0][nm - 1]};
-    tables[1] = (FnTable){moved[1], g->sdk_fns, ns, moved[1][0], moved[1][ns - 1]};
-#else
-    tables[0] = (FnTable){g->main_addrs, g->main_fns, nm, g->main_addrs[0], g->main_addrs[nm - 1]};
-    tables[1] = (FnTable){g->sdk_addrs, g->sdk_fns, ns, g->sdk_addrs[0], g->sdk_addrs[ns - 1]};
 #endif
+    for (int t = 0; t < NTABLES; t++) tables[t] = (FnTable){src[t], fns[t], cnt[t], src[t][0], src[t][cnt[t] - 1]};
 }
 
 GuestFn dispatch_lookup(uint64_t addr) {
-    for (int t = 0; t < 2; t++) {
+    for (int t = 0; t < NTABLES; t++) {
         FnTable *ft = &tables[t];
         if (addr < ft->lo || addr > ft->hi) continue;
         uint64_t lo = 0, hi = ft->count;

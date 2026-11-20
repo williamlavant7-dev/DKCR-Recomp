@@ -38,7 +38,7 @@ def load_versions(path):
     for line in Path(path).read_text(encoding='utf-8').splitlines():
         if not line.startswith('GA_VERSION'):
             continue
-        match = re.fullmatch(r'GA_VERSION\((v\d+_\d+_\d+),\s+"([^"]+)",\s+"([0-9A-F]{40})"\)', line)
+        match = re.fullmatch(r'GA_VERSION\(([a-z][a-z0-9_]*),\s+"([^"]+)",\s+"([0-9A-F]{40})"\)', line)
         if not match or match[1] in versions:
             raise ValueError(f'Invalid or duplicate game version: {line}')
         versions[match[1]] = (match[2], match[3])

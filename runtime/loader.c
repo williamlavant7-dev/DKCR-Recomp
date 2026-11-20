@@ -8,7 +8,8 @@ Module g_modules[4];
 int g_nmodules;
 
 enum { DT_NULL = 0, DT_PLTRELSZ = 2, DT_HASH = 4, DT_STRTAB = 5, DT_SYMTAB = 6, DT_RELA = 7, DT_RELASZ = 8,
-       DT_JMPREL = 23, DT_INIT_ARRAY = 25, DT_FINI_ARRAY = 26, DT_INIT_ARRAYSZ = 27, DT_FINI_ARRAYSZ = 28 };
+       DT_JMPREL = 23, DT_INIT_ARRAY = 25, DT_FINI_ARRAY = 26, DT_INIT_ARRAYSZ = 27, DT_FINI_ARRAYSZ = 28,
+       DT_RELRSZ = 35, DT_RELR = 36 };
 enum { R_ABS64 = 257, R_GLOB_DAT = 1025, R_JUMP_SLOT = 1026, R_RELATIVE = 1027 };
 
 typedef struct { uint32_t name; uint8_t info, other; uint16_t shndx; uint64_t value, size; } Elf64Sym;
@@ -141,13 +142,32 @@ static uint64_t resolve(Module *m, uint32_t symidx) {
 }
 
 static void relocate(Module *m) {
-    uint64_t rela = 0, relasz = 0, jmprel = 0, pltsz = 0;
+    uint64_t rela = 0, relasz = 0, jmprel = 0, pltsz = 0, relr = 0, relrsz = 0;
     for (uint64_t *d = (uint64_t *)m->dynamic; d[0] != DT_NULL; d += 2) {
         if (d[0] == DT_RELA) rela = m->base + d[1];
         if (d[0] == DT_RELASZ) relasz = d[1];
         if (d[0] == DT_JMPREL) jmprel = m->base + d[1];
         if (d[0] == DT_PLTRELSZ) pltsz = d[1];
+        if (d[0] == DT_RELR) relr = m->base + d[1];
+        if (d[0] == DT_RELRSZ) relrsz = d[1];
     }
+    // RELR (DKCR's newer SDK; LAS had none): the relative relocations packed as an address word (even) followed by
+    // bitmap words (odd), each bit after the lowest marking one of the next 63 words. Each place holds its link-time
+    // value (the module is linked at 0), so the base is added in place.
+    uint64_t *where = NULL, nrelr = 0;
+    for (const uint64_t *e = (const uint64_t *)relr, *end = e + relrsz / 8; e < end; e++) {
+        if (!(*e & 1)) {
+            where = (uint64_t *)(m->base + *e);
+            *where++ += m->base;
+            nrelr++;
+        } else {
+            uint64_t bits = *e >> 1;
+            for (int i = 0; bits; i++, bits >>= 1)
+                if (bits & 1) where[i] += m->base, nrelr++;
+            where += 63;
+        }
+    }
+    if (nrelr) LOG("relocated %-5s: %llu RELR places\n", m->name, (unsigned long long)nrelr);
     int unresolved = 0;
     for (int pass = 0; pass < 2; pass++) {
         Elf64Rela *r = (Elf64Rela *)(pass ? jmprel : rela);
@@ -174,8 +194,10 @@ static void relocate(Module *m) {
 
 void loader_load(const char *exefs) {
     char path[1024];
-    const struct { const char *name; uint64_t base; } mods[] = {{"main", MAIN_BASE}, {"sdk", SDK_BASE}};  // (rt.h: may move)
-    for (unsigned i = 0; i < 2; i++) {
+    // (rt.h: may move) DKCR's subsdk0 is NVIDIA's video player, which Unity's video player calls for movies.
+    const struct { const char *name; uint64_t base; } mods[] = {
+        {"main", MAIN_BASE}, {"subsdk0", SUBSDK0_BASE}, {"sdk", SDK_BASE}};
+    for (unsigned i = 0; i < sizeof mods / sizeof *mods; i++) {
         Module *m = &g_modules[g_nmodules++];
         m->name = mods[i].name;
         snprintf(path, sizeof path, "%s/%s", exefs, m->name);

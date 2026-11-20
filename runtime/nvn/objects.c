@@ -438,6 +438,7 @@ static NvnTexture *texture_from_builder(uint64_t b) {
     t->stride = G(uint64_t, b, 0x30);
     uint64_t pool = G(uint64_t, b, 0x38);
     t->pool = pool ? HOST(NvnPool, pool) : NULL;
+    t->pool_guest = pool;
     t->pool_offset = G(uint64_t, b, 0x40);
     t->addr = t->pool ? t->pool->storage + t->pool_offset : 0;
     builder_layout(b, &t->layout);
@@ -489,7 +490,9 @@ NVN(nvnTextureGetSwizzle) { for (int i = 0; i < 4; i++) *(uint32_t *)AP(1 + i) =
 NVN(nvnTextureGetDepthStencilMode) { RET(TEX->ds_mode); }
 NVN(nvnTextureGetStride) { RET(TEX->stride); }
 NVN(nvnTextureGetTextureAddress) { RET(TEX->addr); }
-NVN(nvnTextureGetMemoryPool) { RET(0); }
+// (DKCR's Unity asks a texture for its pool and offset to flush what it wrote through the CPU: with 0 it flushed
+// pool 0. LAS never asked.)
+NVN(nvnTextureGetMemoryPool) { RET(TEX->pool_guest); }
 NVN(nvnTextureGetMemoryOffset) { RET(TEX->pool_offset); }
 NVN(nvnTextureGetStorageSize) { RET(tegra_total_size(&TEX->layout)); }
 NVN(nvnTextureGetDebugID) { RET(TEX->debug_id); }

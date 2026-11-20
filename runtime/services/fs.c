@@ -113,9 +113,10 @@ static void base_close(void) {
 static void base_open(void) {
     if (g_base_open) return;
     char path[1100], why[256] = "";
-    snprintf(path, sizeof path, "%s/region_common", g_romfs_dir);
+    // (the romfs folder itself: LAS looked for its region_common folder; DKCR's data is Unity's Data/)
+    snprintf(path, sizeof path, "%s", g_romfs_dir);
     struct stat sb;
-    if (stat(path, &sb) == 0 && romfs_layout(g_romfs_dir, &g_base, why, sizeof why)) {
+    if (stat(path, &sb) == 0 && S_ISDIR(sb.st_mode) && romfs_layout(g_romfs_dir, &g_base, why, sizeof why)) {
         LOG("[fs] romfs: %d files served from %s\n", g_base.nfiles, g_romfs_dir);
     } else {
         snprintf(path, sizeof path, "%s.bin", g_romfs_dir);  // (an older version's image)

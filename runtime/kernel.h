@@ -44,6 +44,11 @@ struct KThread {
     // in-place reboot (kernel_stop_threads): thread_main's setjmp point, where the thread unwinds to and ends
     jmp_buf unwind;
     bool started, finished;
+    // pausing (svcSetThreadActivity; DKCR's Unity GC stops the world): suspend_req asks the thread to stop at its
+    // next safe point (rt_unwind_point); parked: it has (g_klock); in_svc: inside rt_svc, its registers saved in cpu
+    // and not running guest code - as good as stopped. suspend_req and in_svc are read and written with __atomic.
+    bool suspend_req, in_svc, parked;
+    uint64_t svc_pc;       // the svc instruction rt_svc was entered from (GetThreadContext3's pc)
     KThread *anext;        // every thread of this boot (g_klock)
     // (diagnostics: kernel_dump_threads) when the current kernel wait began; the handles of a WaitSynchronization
     uint64_t wait_since;

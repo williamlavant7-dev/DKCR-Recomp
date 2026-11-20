@@ -28,6 +28,7 @@ typedef struct NvnTexture {
     uint64_t stride;
     uint64_t addr;  // guest address of texel storage
     NvnPool *pool;
+    uint64_t pool_guest;  // the game's NVNmemoryPool (nvnTextureGetMemoryPool)
     uint64_t pool_offset;
     void *backend;  // renderer-side texture
     uint64_t debug_id;

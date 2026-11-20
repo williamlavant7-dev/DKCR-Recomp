@@ -67,8 +67,14 @@ extern uint64_t g_guest_lo;
 #define ALIAS_OFF        0x0100000000ull                 // (between HLE and the stacks)
 #endif
 #define GUEST_HI         (GUEST_LO + GUEST_SIZE)
+// DKCR's main is 110 MB in memory (LAS's was 29 MB), so the modules are spaced wider than LAS's main+64 MB sdk:
+// main 0x6e51000 bytes, subsdk0 (the video player) 0x681000, sdk 0xc16000, each with room to spare.
+// (The game code is generated at these same bases: Makefile `gen`, runtime/gamebuild.c, tools/sym.py.)
 #define MAIN_BASE        (GUEST_LO + 0x0000000000ull)
-#define SDK_BASE         (GUEST_LO + 0x0004000000ull)
+#define SUBSDK0_BASE     (GUEST_LO + 0x0007000000ull)
+#define SDK_BASE         (GUEST_LO + 0x0008000000ull)
+#define MODULES_END_OFF  0x0009000000ull                 // (sdk's end, rounded up)
+_Static_assert(MODULES_END_OFF <= HLE_OFF, "the game modules run into HLE (the iOS layout predates DKCR)");
 #define HLE_BASE         (GUEST_LO + HLE_OFF)            // fake addresses for host-implemented functions
 #define HLE_SIZE         0x0000100000ull
 #define TLS_BASE         (GUEST_LO + TLS_OFF)
@@ -127,7 +133,7 @@ void kernel_init(void);
 void kernel_stop_threads(void (*idle)(void));  // reboot: unwind every guest thread and join it (idle: called while waiting)
 void kernel_reset(void);                       // reboot: empty handle table, memory map, thread list
 KThread *kernel_create_main_thread(uint64_t entry, uint64_t stack_size, int prio);
-void kernel_run_main(KThread *t, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3);
+void kernel_run_main(KThread *t, uint64_t x0, uint64_t x1, uint64_t x2, uint64_t x3, uint64_t x4);
 uint32_t kernel_current_thread_handle(void);
 Cpu *kernel_current_cpu(void);
 

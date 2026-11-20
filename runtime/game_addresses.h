@@ -12,8 +12,8 @@ extern "C" {
 
 typedef struct GameAddrs {
 #define GA_ADDR(name, value) uint64_t name;
-#include "game_addresses/patches_v1_0_0.h"
-#include "game_addresses/runtime_v1_0_0.h"
+#include "game_addresses/patches_dkcr.h"
+#include "game_addresses/runtime_dkcr.h"
 #undef GA_ADDR
 } GameAddrs;
 

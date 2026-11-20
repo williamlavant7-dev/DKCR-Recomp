@@ -134,9 +134,32 @@ int ipc_handle_request(Cpu *c, uint32_t handle) {
         req.nc = ncd;
     }
 
-    if (req.type == 2) {  // close
+    if (req.type == 2 || req.type == 15) {  // close (15: TIPC's)
         LOG("[ipc] close session %s (handle %x)\n", sess->svc->name, handle);
         if (!sess->domain) service_release(sess->svc);  // (a domain's objects stay: closed one by one)
+        return 0;
+    }
+    if (req.type >= 16) {
+        // TIPC (DKCR's newer SDK talks to sm: this way; LAS's never did): the same header and descriptors, but the
+        // command is the type - 16 and the raw data is just the arguments - no SFCI header, padding or domains. The
+        // reply is the same header (type kept) with the result word, then the outputs; new objects go as moved handles.
+        req.cmd = req.type - 16;
+        req.data = (const uint8_t *)raw;
+        req.data_size = raw_words * 4;
+        sess->svc->handler(sess->svc, &req, &resp);
+        for (int i = 0; i < resp.nobjects; i++) resp.move_handles[resp.nmove++] = session_new(resp.objects[i]);
+        memset(msg, 0, 0x100);
+        uint32_t *w = msg, *q = w + 2;
+        int has_handles = resp.ncopy || resp.nmove;
+        w[0] = req.type;
+        w[1] = (1 + (resp.data_size + 3) / 4) | (has_handles ? 0x80000000u : 0);
+        if (has_handles) {
+            *q++ = (resp.ncopy << 1) | (resp.nmove << 5);
+            for (int i = 0; i < resp.ncopy; i++) *q++ = resp.copy_handles[i];
+            for (int i = 0; i < resp.nmove; i++) *q++ = resp.move_handles[i];
+        }
+        *q++ = resp.result;
+        memcpy(q, resp.data, resp.data_size);
         return 0;
     }
     uint8_t *payload = (uint8_t *)aligned;

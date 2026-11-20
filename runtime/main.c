@@ -37,8 +37,17 @@ static void module_init(Cpu *c, Module *m) {
     else run_array(c, m->init_array, m->init_array_sz);
 }
 
-static void rtld_init_sdk(Cpu *c) { module_init(c, &g_modules[1]); }
-static void rtld_init_main(Cpu *c) { module_init(c, &g_modules[0]); }
+static Module *module_named(const char *name) {
+    for (int i = 0; i < g_nmodules; i++)
+        if (!strcmp(g_modules[i].name, name)) return &g_modules[i];
+    FATAL("module %s isn't loaded\n", name);
+}
+// As rtld: the SDK first, then the other libraries (DKCR's subsdk0, the video player, imports from it).
+static void rtld_init_sdk(Cpu *c) { module_init(c, module_named("sdk")); module_init(c, module_named("subsdk0")); }
+static void rtld_init_main(Cpu *c) { module_init(c, module_named("main")); }
+// DKCR's SDK calls a third function after nnMain returns, before nninitFinalizeSdkModule and nnosQuickExit:
+// the modules' finalizers. The game is quit from the host, so there is nothing to run.
+static void rtld_fini(Cpu *c) { (void)c; LOG("nnMain returned\n"); }
 
 // Claim the guest address range before anything else can map there. The host allocator places
 // regions at random addresses in the same window; on a collision, re-exec for a fresh layout.
@@ -218,6 +227,13 @@ static void boot(const char *root) {
     if (!game_version_select(root, why, sizeof why)) FATAL("%s\n", why);  // (the address table: game_addresses.h)
     if (!gamelib_load(root, why, sizeof why)) FATAL("%s\n", why);
     loader_load(exefs);
+    {
+        // rtld points this sdk variable at its own slot for the manual symbol lookup hook; nn::ro::Initialize (DKCR's
+        // Unity calls it, LAS never did) stores its hook through it. The loader binds symbols itself and rtld
+        // doesn't run, so it gets a slot of our own: the hook is stored and never called.
+        uint64_t p = loader_find_symbol("_ZN2nn2ro6detail36g_pLookupGlobalManualFunctionPointerE");
+        if (p && !*(uint64_t *)p) *(uint64_t *)p = (uint64_t)(uintptr_t)hle_alloc(8);
+    }
     rando_boot();  // the chosen seed's data patches go into the freshly loaded module
     { extern void settings_load(void); settings_load(); }
     kernel_init();
@@ -231,17 +247,22 @@ static void boot(const char *root) {
         if (fread(meta, 1, sizeof meta, f) == sizeof meta && !memcmp(meta, "META", 4)) {
             prio = meta[0xE];
             stack_size = *(uint32_t *)(meta + 0x1C);
+            extern uint64_t g_system_resource_size;  // (kernel.c: GetInfo 16)
+            g_system_resource_size = *(uint32_t *)(meta + 0x14);
         }
         fclose(f);
     }
     LOG("main thread: prio %d, stack 0x%x\n", prio, stack_size);
 
-    uint64_t start = loader_find_symbol("_ZN2nn4init5StartEmmPFvvES2_");
+    // DKCR's newer SDK: nn::init::Start(thread_handle, args_region, init_sdk, init_main, fini) - it calls init_sdk
+    // after nnosInitialize, init_main after nninitStartup (the game's constructors need its heap), fini after nnMain.
+    uint64_t start = loader_find_symbol("_ZN2nn4init5StartEmmPFvvES2_S2_");
     if (!start) FATAL("nn::init::Start not found\n");
-    uint64_t init_fn = hle_register("<rtld_init_sdk>", rtld_init_sdk);
-    uint64_t fini_fn = hle_register("<rtld_init_main>", rtld_init_main);
+    uint64_t init_sdk = hle_register("<rtld_init_sdk>", rtld_init_sdk);
+    uint64_t init_main = hle_register("<rtld_init_main>", rtld_init_main);
+    uint64_t fini = hle_register("<rtld_fini>", rtld_fini);
     KThread *t = kernel_create_main_thread(start, stack_size, prio);
-    kernel_run_main(t, t->handle, 0, init_fn, fini_fn);  // nn::init::Start(thread_handle, args_region, init, fini)
+    kernel_run_main(t, t->handle, 0, init_sdk, init_main, fini);
 }
 
 // The log's first line after the log's own: this build and the machine, for bug reports. Nothing that identifies the
