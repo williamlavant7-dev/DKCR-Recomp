@@ -2732,12 +2732,15 @@ static uint64_t shader_texture_handle(int stage, const ShaderTexture *st_) {
     }
     uint32_t k = st_->bindless_cbuf, off = st_->bindless_offset;
     uint64_t addr = 0, size = 0;
-    if (k == 2) {  // NVN's separate handles: textures from 0x168, samplers from 0x568 (256 each), as DKCR's shaders read them
+    if (k == 2) {  // NVN's separate handles: textures from 0x168, samplers from 0x568, as DKCR's shaders read them
         uint32_t o[2] = {off, st_->bindless_offset2}, h = 0;
         for (int j = 0; j < 2; j++) {
             if (!o[j] || (o[j] & 3)) continue;
-            if (o[j] >= 0x168 && o[j] < 0x568) h |= st.sep_tex[stage][(o[j] - 0x168) / 4];
-            else if (o[j] >= 0x568 && o[j] < 0x968) h |= st.sep_smp[stage][(o[j] - 0x568) / 4];
+            // (8 bytes a slot - 128 of each: a 64-bit handle, the id in its low word. The world map's ground reads its
+            // textures at 0x168 / 0x170 / 0x178; 4 bytes a slot gave it slot 2 for slot 1: the shadow map's 1x1
+            // placeholder (0) as its lighting, a black ground.)
+            if (o[j] >= 0x168 && o[j] < 0x568 && !((o[j] - 0x168) & 7)) h |= st.sep_tex[stage][(o[j] - 0x168) / 8];
+            else if (o[j] >= 0x568 && o[j] < 0x968 && !((o[j] - 0x568) & 7)) h |= st.sep_smp[stage][(o[j] - 0x568) / 8];
         }
         return h;
     }
@@ -7643,6 +7646,9 @@ static void debug_draw(Prog *pr, CmdRec *r, bool indexed) {
     LOG(" | vp %.0f %.0f %.0f %.0f | attrs %#x blend %#x ds %02x%02x%02x poly %02x%02x chmask %08x\n", st.viewport[0][0], st.viewport[0][1],
         st.viewport[0][2], st.viewport[0][3], pr->vi->attr_mask, st.color_state[0], st.ds[0], st.ds[1], st.ds[2], st.poly[0], st.poly[1],
         st.channel_mask);
+    LOG("[draw]   ds %02x %02x %02x %02x %02x %02x %02x %02x stencil ref %x/%x mask %x/%x vmask %x/%x | depth range %g %g\n", st.ds[0], st.ds[1],
+        st.ds[2], st.ds[3], st.ds[4], st.ds[5], st.ds[6], st.ds[7], st.stencil_ref[0], st.stencil_ref[1], st.stencil_mask[0], st.stencil_mask[1],
+        st.stencil_vmask[0], st.stencil_vmask[1], st.depth_range[0][0], st.depth_range[0][1]);
     {   // vertex attributes (NVN format, stream, offset) and stream strides
         char line[512];
         int n = snprintf(line, sizeof line, "[draw]   attribs:");
@@ -8823,6 +8829,9 @@ static void exec_list(uint64_t handle, int depth) {
         }
         case CMD_CLEAR_DEPTH_STENCIL:
             snap_reason = "clear-depth"; snapshots_invalidate(NULL);
+            if (g_debug_frame || getenv("LARECOMP_LOG_CLEARS"))
+                LOG("[dclear] frame %llu %p depth %d %g stencil %#llx mask %#llx\n", (unsigned long long)renderer_present_count(), (void *)st.rt.depth,
+                    r->x[0] != 0, r->f[0], (unsigned long long)r->x[1], (unsigned long long)r->x[2]);
             if (ct_on() && st.rt.depth)
                 LOG("[ct] clear-depth %p d%d s%d sc %d %d %d %d\n", (void *)st.rt.depth, r->x[0] != 0, r->x[2] != 0, st.scissor[0][0],
                     st.scissor[0][1], st.scissor[0][2], st.scissor[0][3]);

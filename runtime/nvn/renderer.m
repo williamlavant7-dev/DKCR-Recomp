@@ -2191,8 +2191,11 @@ static uint64_t shader_texture_handle(int stage, const ShaderTexture *st_) {
         uint32_t o[2] = {off, st_->bindless_offset2}, h = 0;
         for (int j = 0; j < 2; j++) {
             if (!o[j] || (o[j] & 3)) continue;
-            if (o[j] >= 0x168 && o[j] < 0x568) h |= st.sep_tex[stage][(o[j] - 0x168) / 4];
-            else if (o[j] >= 0x568 && o[j] < 0x968) h |= st.sep_smp[stage][(o[j] - 0x568) / 4];
+            // (8 bytes a slot - 128 of each: a 64-bit handle, the id in its low word. The world map's ground reads its
+            // textures at 0x168 / 0x170 / 0x178; 4 bytes a slot gave it slot 2 for slot 1: the shadow map's 1x1
+            // placeholder (0) as its lighting, a black ground.)
+            if (o[j] >= 0x168 && o[j] < 0x568 && !((o[j] - 0x168) & 7)) h |= st.sep_tex[stage][(o[j] - 0x168) / 8];
+            else if (o[j] >= 0x568 && o[j] < 0x968 && !((o[j] - 0x568) & 7)) h |= st.sep_smp[stage][(o[j] - 0x568) / 8];
         }
         return h;
     }

@@ -180,7 +180,7 @@ All of these write to the log (`lasrecomp.log` in the data folder, or the run's 
 | `LARECOMP_METAL_HUD` | 1 | Mac, iPhone and iPad. Set by the app itself when it starts with the Metal HUD setting on; not needed by hand. |
 | `LARECOMP_FNPROF` | `from:to` (frames) | Sample which game functions run between those frames, to `build/fnprof.txt`. `0:<to>` starts at process start. |
 | `LARECOMP_DEBUG_FRAME` | frame | Dump that frame's render passes to `build/pass_NNN.png` (relative to the data folder) and log its draws (F9 does the same for the next frame). |
-| `LARECOMP_DEBUG_FRAMES` | count | With `LARECOMP_DEBUG_FRAME` (Vulkan): dump that many frames in a row. On Vulkan the debug frame also logs each pass's attachments and load ops, and its colour clears. |
+| `LARECOMP_DEBUG_FRAMES` | count | With `LARECOMP_DEBUG_FRAME` (Vulkan): dump that many frames in a row. On Vulkan the debug frame also logs each pass's attachments and load ops, its colour and depth clears, and each draw's depth / stencil state. |
 | `LARECOMP_DEBUG_DRAWS` | pass number | With `LARECOMP_DEBUG_FRAME` (Vulkan): save the render target after each draw of that pass (`build/draw_NNN.png`), and each pass's target as it starts (`pass_NNN_begin.png`). The debug frame's draw log also lists vertex attribute formats, index / vertex buffer addresses and (with `LARECOMP_DEBUG_DATA`) vertex constant buffers. |
 | `LARECOMP_DBG_FS` | `<fs code addr hex>:<pc hex>:<reg>` | That fragment shader outputs the register's value after that instruction as grey (`+1000` / `+2000`: its low / high f16; pc `ffffffff`: white). Vulkan needs `LARECOMP_VK_NO_SPIRV_CACHE=1` too. |
 | `LARECOMP_LOG_FSHASH` | 1 | In the debug frame: log each fragment shader's hash (for `LARECOMP_SKIP_FSHASH`). |
