@@ -1684,14 +1684,15 @@ static void begin_pass(void) {
         log_passes = getenv("LARECOMP_VK_LOG_PASSES") ? atol(getenv("LARECOMP_VK_LOG_PASSES")) : 0;
         if (log_passes == 1) log_passes = 300;
     }
-    if (log_passes > 0) {
-        log_passes--;
+    if (log_passes > 0 || g_debug_frame) {
+        if (log_passes > 0) log_passes--;
         LOG("[vk] pass %ux%u: %u color", minw, minh, pass_ncolor);
         for (uint32_t i = 0; i < pass_ncolor; i++) {
             TexBackend *b = !placed && st.rt.color[i] ? st.rt.color[i]->backend : NULL;
             LOG(" [%u: fmt %d view %s %s", i, pass_color[i], ca[i].imageView ? "yes" : "none", placed ? "placeholder"
                 : ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? "clear" : "load");
             // (the image under it: its own format, size, levels / layers, samples; the view's first level and layer)
+            if (b) LOG(", image %p", (void *)b->image);
             if (b) LOG(", image fmt %d %ux%u lv %u ly %u s %u, view lv %u ly %u", b->format, b->width, b->height, b->levels,
                        b->layers, b->samples, st.rt.has_cview[i] && (st.rt.cview[i].setmask & 1) ? st.rt.cview[i].base_level : 0,
                        st.rt.has_cview[i] && (st.rt.cview[i].setmask & 2) ? st.rt.cview[i].min_layer : 0);
@@ -2083,6 +2084,19 @@ static bool translate_program_now(Prog *p) {
     maxwell_gmem_size = HEAP_MAX;
     maxwell_gmem_chunk_shift = gmem_chunk_shift();
     pthread_mutex_lock(&translate_lock);
+    {   // (debug) LARECOMP_DBG_FS=<fs code addr hex>:<pc hex>:<reg>: that fragment shader outputs the register's value at
+        // that pc (+1000 / +2000: its low / high f16), as renderer.m
+        extern const uint8_t *maxwell_dbg_code;
+        extern uint32_t maxwell_dbg_pc;
+        extern int maxwell_dbg_reg;
+        static int parsed;
+        static unsigned long long dbg_addr;
+        static unsigned dbg_pc;
+        static int dbg_reg;
+        if (!parsed) { parsed = 1; const char *e = getenv("LARECOMP_DBG_FS"); if (e) sscanf(e, "%llx:%x:%d", &dbg_addr, &dbg_pc, &dbg_reg); }
+        maxwell_dbg_code = dbg_addr ? (const uint8_t *)(uintptr_t)dbg_addr : NULL;
+        maxwell_dbg_pc = dbg_pc, maxwell_dbg_reg = dbg_reg;
+    }
     maxwell_const_data = (const uint8_t *)(uintptr_t)(p->code[0] + p->cmax[0]), maxwell_const_size = p->cmax[0] != 0x10000 ? p->csize[0] : 0;
     // (LARECOMP_VK_PUSH_CB: the vertex shader's words first; vertex and fragment together within the device's limit,
     // which Vulkan only guarantees at 128 bytes, and at most 64 words)
@@ -7581,7 +7595,7 @@ static void debug_draw(Prog *pr, CmdRec *r, bool indexed) {
         (unsigned long long)(indexed ? r->x[6] : r->x[4]), (unsigned long long)r->x[0], (unsigned long long)r->x[2],
         (unsigned long long)st.program->stages[0].code_addr, (unsigned long long)st.program->stages[1].code_addr,
         pr->vi->cbuf_mask, pr->fi->cbuf_mask, st.rt.ncolor);
-    for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) LOG(" %ux%u/f%#x", st.rt.color[i]->width, st.rt.color[i]->height, st.rt.color[i]->format);
+    for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) LOG(" %ux%u/f%#x %p", st.rt.color[i]->width, st.rt.color[i]->height, st.rt.color[i]->format, (void *)st.rt.color[i]);
     if (st.rt.depth) LOG(" d%#x %p", st.rt.depth->format, (void *)st.rt.depth);
     LOG(" | vp %.0f %.0f %.0f %.0f | attrs %#x blend %#x ds %02x%02x%02x poly %02x%02x chmask %08x\n", st.viewport[0][0], st.viewport[0][1],
         st.viewport[0][2], st.viewport[0][3], pr->vi->attr_mask, st.color_state[0], st.ds[0], st.ds[1], st.ds[2], st.poly[0], st.poly[1],
@@ -8707,9 +8721,10 @@ static void exec_list(uint64_t handle, int depth) {
         case CMD_CLEAR_COLOR: {
             snap_reason = "clear-color"; snapshots_invalidate(NULL);
             int index = (int)r->x[0];
-            if (getenv("LARECOMP_LOG_CLEARS") && index < st.rt.ncolor && st.rt.color[index])
-                LOG("[cclear] frame %llu idx %d %ux%u f%#x mask %#x\n", (unsigned long long)renderer_present_count(), index,
-                    st.rt.color[index]->width, st.rt.color[index]->height, st.rt.color[index]->format, (uint32_t)r->x[2]);
+            if ((g_debug_frame || getenv("LARECOMP_LOG_CLEARS")) && index < st.rt.ncolor && st.rt.color[index])
+                LOG("[cclear] frame %llu idx %d %ux%u f%#x %p mask %#x rgba %g %g %g %g\n", (unsigned long long)renderer_present_count(), index,
+                    st.rt.color[index]->width, st.rt.color[index]->height, st.rt.color[index]->format, (void *)st.rt.color[index],
+                    (uint32_t)r->x[2], ((float *)x)[0], ((float *)x)[1], ((float *)x)[2], ((float *)x)[3]);
             if (ct_on() && index < st.rt.ncolor && st.rt.color[index])
                 LOG("[ct] clear-color %p mask %#x sc %d %d %d %d\n", (void *)st.rt.color[index], (uint32_t)r->x[2], st.scissor[0][0], st.scissor[0][1],
                     st.scissor[0][2], st.scissor[0][3]);
