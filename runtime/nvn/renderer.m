@@ -252,7 +252,7 @@ static bool rt_same(const RtState *a, const RtState *b) {
 static struct {
     RtState rt;
     bool rt_dirty;
-    NvnProgram *program;
+    NvnProgram *program, *gfx_program, *cs_program;
     uint8_t blend[8][8];
     uint32_t channel_mask;
     uint8_t color_state[4], ds[8], ms[0x18], poly[4];
@@ -2957,7 +2957,18 @@ static CsProg *compute_program(NvnProgram *p) {
     return cp;
 }
 
+// A bind sets only the stages in its NVNshaderStageBits (1 vertex, 2 fragment, 4 geometry, 8 / 0x10 tessellation,
+// 0x20 compute). DKCR's Unity binds its vertex + fragment program with bits 3 and then NULL with bits 0x3c, which
+// keeps the vertex and fragment shaders; compute binds the same way. st.program is what the next draw or dispatch uses.
+static void bind_program(const CmdRec *r) {
+    NvnProgram *p = (NvnProgram *)(uintptr_t)r->x[0];
+    uint32_t bits = r->x[1] ? (uint32_t)r->x[1] : 0x3f;
+    if (bits & 3) st.gfx_program = p;
+    if (bits & 0x20) st.cs_program = p;
+    st.program = (bits & 3) ? st.gfx_program : (bits & 0x20) ? st.cs_program : st.program;
+}
 static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
+    st.program = st.cs_program;
     snap_reason = "compute"; snapshots_invalidate(NULL);
     {   // (debug) LARECOMP_WATCH_ADDR: the data watchpoint (dispatch.c) armed once the game draws
         static bool armed;
@@ -4216,6 +4227,7 @@ static void snow_cover_check_timed(CmdRec *r, bool indexed, Prog *pr) {
 }
 
 static void draw_one(CmdRec *r, bool indexed) {
+    st.program = st.gfx_program;
     if (!st.program) { stat_skipped++; return; }
     static bool logged_modes;
     if (!logged_modes) {
@@ -5899,7 +5911,7 @@ static void exec_list(uint64_t handle, int depth) {
             for (uint64_t i = 0; i < r->x[0] && depth < 8; i++) exec_list(h[i], depth + 1);
             break;
         }
-        case CMD_BIND_PROGRAM: st.program = (NvnProgram *)(uintptr_t)r->x[0]; break;
+        case CMD_BIND_PROGRAM: bind_program(r); break;
         case CMD_BIND_BLEND: { uint8_t *b = x; memcpy(st.blend[b[0] & 7], b, 8); break; }
         case CMD_BIND_CHANNEL_MASK: memcpy(&st.channel_mask, x, 4); break;
         case CMD_BIND_COLOR: memcpy(st.color_state, x, 4); break;

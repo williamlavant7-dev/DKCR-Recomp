@@ -1912,6 +1912,11 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
         if (!c->glsl) sp(&c->body, "    threadgroup_barrier(mem_flags::mem_threadgroup);\n");
         else if (c->stage == STAGE_COMPUTE) sp(&c->body, "    barrier();\n");
         else sp(&c->body, "    /* bar */\n");  // GLSL barrier() is compute / tessellation only
+    } else if (OPM(0x50e0000000000000ull, 0xfff8000000000000ull)) {
+        // VOTE.VTG (the vertex / tessellation / geometry stages' VOTE): no result a later instruction reads, a hint to
+        // the hardware only - DKCR's Unity vertex shaders have it, and the program failed on it (every draw with it
+        // skipped, the screen black). As other Maxwell translators do, nothing.
+        sp(&c->body, "    /* vote.vtg */\n");
     } else {
         fail(c, "unknown instruction %016llx at %#x", (unsigned long long)w, pc);
     }
@@ -3174,8 +3179,9 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
     c->glsl = key && key->glsl;
     const uint8_t *sph = blob + 0x30;
     const uint8_t *code = blob + 0x80;
-    // compute programs have neither the 0x30-byte NVN header nor an SPH: code starts at the blob
-    if (stage == STAGE_COMPUTE) code = blob;
+    // compute programs have no SPH. LAS's start at the blob; DKCR's (a newer NVN) start with a 0x100-byte header
+    // whose first word is 0x12345679 (the rest zero), then the code.
+    if (stage == STAGE_COMPUTE) code = *(const uint32_t *)blob == 0x12345679 && max_size > 0x100 ? blob + 0x100 : blob;
     if (stage == STAGE_FRAGMENT) {
         c->omap_target = *(const uint32_t *)(sph + 0x48);
         c->omap_depth = (*(const uint32_t *)(sph + 0x4C) >> 1) & 1;
