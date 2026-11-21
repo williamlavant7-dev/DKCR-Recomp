@@ -4470,7 +4470,11 @@ static bool host_import(uint64_t off, uint64_t size, VkBuffer *buf, VkDeviceMemo
 static bool gc_import(int k) {
     uint64_t off = (uint64_t)k << gc_shift, heap = gmem_heap_size();
     if (k < 0 || k >= gc_n || off >= heap) return false;
-    uint64_t size = heap - off < (1ull << gc_shift) ? heap - off : 1ull << gc_shift;
+    // Whole chunks: the kernel commits the window in 16 MB blocks (kernel.c window_mapped), so a chunk the mapped part
+    // reaches is backed whole. (Cut at the extent, the chunk at the end was imported again each time DKCR mapped more
+    // there - its scattered mappings did that all the time - and its device address changed under the chunk tables.)
+    uint64_t size = 1ull << gc_shift;
+    if (off + size > HEAP_MAX) size = HEAP_MAX - off;
     if (gc[k].buf && gc[k].size >= size) return true;
     // DKCR's window is sparse: a uniform buffer's stale pointer (gc_scan_pointers) points at reserved pages, which an
     // import refuses - every frame. Tried again only once the game has mapped memory since.
