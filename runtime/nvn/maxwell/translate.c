@@ -3168,6 +3168,21 @@ static int lmem_size(const uint64_t *code, size_t end, const uint8_t *sph) {
     return words;
 }
 
+// A flow instruction (BRA, EXIT, KIL, BRK, CONT, RET, SYNC) also tests a condition code in its low 5 bits: 0xf is
+// "always". DKCR's Unity vertex shaders end in VOTE.VTG then EXIT.FCSM_TR (0x1c): leave early when the vote says the
+// primitive is culled, before the position is written. That test is the hardware's own cull result, which we don't
+// have; like other Maxwell translators we take it as never true (the vertex runs on and the rasterizer culls). Read
+// as unconditional, every vertex left without a position and the screen stayed black. Made @!PT here (never runs),
+// so every pass below that reads the words sees it the same way.
+static uint64_t flow_cc(uint64_t w) {
+    uint64_t t12 = w & 0xfff0000000000000ull;
+    bool flow = (w & 0xfff0000000000020ull) == 0xe240000000000000ull || t12 == 0xe300000000000000ull ||
+                t12 == 0xe330000000000000ull || t12 == 0xe340000000000000ull || t12 == 0xe350000000000000ull ||
+                t12 == 0xe320000000000000ull || (w & 0xfff8000000000000ull) == 0xf0f8000000000000ull;
+    if (flow && (w & 0x1f) == 0x1c) w |= 0xfull << 16;  // guard @!PT
+    return w;
+}
+
 ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, const ShaderKey *key) {
     ShaderInfo *info = calloc(1, sizeof *info);
     info->stage = stage;
@@ -3189,6 +3204,9 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
     // find the end: the last EXIT followed by self-branch padding, or max_size
     size_t n = (max_size - (code - blob)) / 8;
     if (n > 65536) n = 65536;
+    uint64_t *words = malloc(n * 8 + 8);  // (the code as translated: flow_cc)
+    for (size_t i = 0; i < n; i++) words[i] = flow_cc(((const uint64_t *)code)[i]);
+    code = (const uint8_t *)words;
     size_t end = 0;
     for (size_t i = 0; i < n; i++) {
         uint64_t w = ((const uint64_t *)code)[i];
@@ -3308,6 +3326,7 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
     // (MSL: more textures than sampler slots take a slot table, at a buffer index the vertex stage's streams use)
     if (!c->glsl && stage == STAGE_VERTEX && info->ntex > MSL_MAX_SAMPLERS)
         fail(c, "%d textures in a vertex shader (Metal: %d samplers)", info->ntex, MSL_MAX_SAMPLERS);
+    free(words);
     if (c->fail) { free(c->body.buf); free(c); return info; }
     if (c->glsl) return glsl_finish(c, any_branch, dbg);
 
