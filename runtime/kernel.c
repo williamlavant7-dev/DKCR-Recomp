@@ -113,10 +113,27 @@ static bool kwait(int64_t timeout_ns, const struct timespec *ts) {
 typedef struct { uint64_t addr, size; uint32_t type, perm; } Region;
 static Region regions[1024];
 static int nregions;
-static uint64_t heap_size;
+static uint64_t heap_size;     // SetHeapSize's, from SETHEAP_BASE
+static uint64_t window_extent;  // bytes from HEAP_BASE up to the end of the last memory mapped there
 uint64_t g_system_resource_size;  // (main.c, from main.npdm)
 static uint64_t tls_used;  // (from TLS_BASE: an offset, as the window can move - rt.h)
-uint64_t kernel_heap_size(void) { return heap_size; }  // bytes from HEAP_BASE set by SetHeapSize
+uint64_t kernel_heap_size(void) { return __atomic_load_n(&window_extent, __ATOMIC_ACQUIRE); }
+// Memory mapped into the window the renderers import (rt.h): the extent grows to its end. DKCR's mappings are sparse
+// (~0.5 GB spread over ~4 GB of addresses), so the renderer imports the window in 16 MB chunks as the game binds them
+// (exec.c gc_lazy), and a host pointer import needs every page of its chunk committed: the 16 MB blocks a mapping
+// touches are committed whole.
+#define WINDOW_CHUNK (16ull << 20)
+static uint64_t window_gen;
+uint64_t kernel_window_gen(void) { return __atomic_load_n(&window_gen, __ATOMIC_ACQUIRE); }
+static void window_mapped(uint64_t addr, uint64_t size) {
+    if (addr < HEAP_BASE || addr + size > HEAP_BASE + HEAP_MAX) return;
+    uint64_t lo = (addr - HEAP_BASE) & ~(WINDOW_CHUNK - 1), hi = (addr + size - HEAP_BASE + WINDOW_CHUNK - 1) & ~(WINDOW_CHUNK - 1);
+    if (hi > HEAP_MAX) hi = HEAP_MAX;
+    plat_commit(HEAP_BASE + lo, hi - lo);
+    __atomic_fetch_add(&window_gen, 1, __ATOMIC_RELEASE);
+    uint64_t end = addr + size - HEAP_BASE;
+    if (end > window_extent) __atomic_store_n(&window_extent, end, __ATOMIC_RELEASE);
+}
 // Writable guest data regions (heap, mapped/physical memory, module .data): for debug/runtime memory scans.
 int kernel_data_regions(uint64_t *addr, uint64_t *size, int max) {
     int n = 0;
@@ -766,16 +783,17 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
     switch (imm) {
     case 0x01: {  // SetHeapSize
         uint64_t size = x[1];
-        if (size > HEAP_MAX) { x[0] = R_OUT_OF_RESOURCE; break; }
+        if (size > SETHEAP_SIZE) { x[0] = R_OUT_OF_RESOURCE; break; }
         heap_size = size;
-        region_remove(HEAP_BASE);
-        if (size) region_add(HEAP_BASE, size, 5, 3);
+        region_remove(SETHEAP_BASE);
+        if (size) region_add(SETHEAP_BASE, size, 5, 3);
         x[0] = R_OK;
-        x[1] = HEAP_BASE;
+        x[1] = SETHEAP_BASE;
         break;
     }
     case 0x02: case 0x03: x[0] = R_OK; break;  // SetMemoryPermission / SetMemoryAttribute
     case 0x04:  // MapMemory(dst, src, size): src is inaccessible while mapped, so copying is equivalent
+        window_mapped(x[0], x[2]);
         memcpy((void *)x[0], (void *)x[1], x[2]);
         region_add(x[0], x[2], 0xB, 3);
         x[0] = R_OK;
@@ -860,6 +878,7 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         KObject *o = handle_get((uint32_t)x[0]);
         if (!o || o->type != KOBJ_SHMEM) { x[0] = R_INVALID_HANDLE; break; }
         KSharedMem *s = (KSharedMem *)o;
+        window_mapped(x[1], x[2]);
         memset((void *)x[1], 0, x[2]);
         s->guest_addr = x[1];  // HLE services write straight into the guest's mapping
         region_add(x[1], x[2], 6, 3);
@@ -939,8 +958,8 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         case 1: v = 0xFFFFFFFFFFFFFFFFull; break;
         case 2: v = ALIAS_BASE; break;
         case 3: v = ALIAS_SIZE; break;
-        case 4: v = HEAP_BASE; break;
-        case 5: v = HEAP_MAX; break;
+        case 4: v = SETHEAP_BASE; break;
+        case 5: v = SETHEAP_SIZE; break;
         case 6: case 21: v = 0xCD500000ull; break;  // application memory (3.2 GB, as on hardware)
         case 7: case 22: v = heap_size + 0x4000000; break;
         case 8: v = 0; break;
@@ -969,6 +988,7 @@ static void svc_impl(Cpu *c, uint32_t imm, uint64_t pc) {
         break;
     }
     case 0x2C:  // MapPhysicalMemory(addr, size)
+        window_mapped(x[0], x[1]);
         memset((void *)x[0], 0, x[1]);
         region_add(x[0], x[1], 0x7, 3);
         x[0] = R_OK;

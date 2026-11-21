@@ -3176,12 +3176,16 @@ static uint64_t range_hash(uint64_t addr, uint64_t size) {
 }
 static void snap_ring_import_tail(void);  // (with the lazy chunks below)
 // Decided once the game's heap is set up (SetHeapSize), which is before anything is drawn: the ring follows the heap.
+// Off for DKCR: its window is the alias region (rt.h), which it maps sparsely (kernel.c window_mapped), so the
+// space after the mapped part isn't free - the game mapped its own buffers over the ring, and the ring's import then
+// kept their chunks from being imported (a compute store through the missing chunk: device lost, write to address 0).
 static bool snap_on(void) {
     if (snap_state >= 0) return snap_state;
     uint64_t heap = kernel_heap_size();
     if (!heap) return false;  // (not decided yet)
     const char *e = getenv("LARECOMP_OVERLAP_SNAP");
-    snap_state = (!e || atoi(e) != 0) && overlap_on() && !gmir_on();  // (copies: nothing read in place, see overlap_on)
+    snap_state = e && atoi(e) != 0 && overlap_on() && !gmir_on();  // (copies: nothing read in place, see overlap_on)
+    if (!snap_state) LOG("[vk] storage snapshots off: the game maps its memory anywhere in the window\n");
     if (snap_state) {
         snap_base = (heap + 0xFFFF) & ~0xFFFFull;  // (minImportedHostPointerAlignment: 64 KB at most)
         if (snap_base + SNAP_RING > HEAP_MAX) {
@@ -4325,6 +4329,7 @@ static struct {
     VkBuffer buf;
     VkDeviceMemory mem;
     uint64_t size, addr;  // (addr: the chunk's device address, lazy mode)
+    uint64_t refused;     // kernel_window_gen() + 1 when an import of it was last refused (0: not)
 } gc[GC_MAX];
 static int gc_n;             // chunks over HEAP_MAX
 static uint32_t gc_shift;    // 0: one buffer
@@ -4347,6 +4352,10 @@ static uint64_t gc_remembered_heap;   // the heap size the remembered chunks wer
 static void gc_remembered_load(void) {
     if (gc_file_loaded) return;
     gc_file_loaded = true;
+    // Workaround, cause not found: with DKCR's sparse window (rt.h) the list held ~160 chunks (2.6 GB) and importing
+    // them at the start ended in a device loss (a compute store to address 0, RTX 3060, Windows) in most runs, none
+    // without the list. Chunks are imported as the game binds them instead. LARECOMP_VK_GMEM_REMEMBER=1: the list.
+    if (!getenv("LARECOMP_VK_GMEM_REMEMBER") || !atoi(getenv("LARECOMP_VK_GMEM_REMEMBER"))) return;
     FILE *f = fopen("cache/gmem_chunks.txt", "r");
     if (!f) return;
     char line[64];
@@ -4463,9 +4472,14 @@ static bool gc_import(int k) {
     if (k < 0 || k >= gc_n || off >= heap) return false;
     uint64_t size = heap - off < (1ull << gc_shift) ? heap - off : 1ull << gc_shift;
     if (gc[k].buf && gc[k].size >= size) return true;
+    // DKCR's window is sparse: a uniform buffer's stale pointer (gc_scan_pointers) points at reserved pages, which an
+    // import refuses - every frame. Tried again only once the game has mapped memory since.
+    uint64_t gen = kernel_window_gen() + 1;
+    if (gc[k].refused == gen) return false;
     VkBuffer buf;
     VkDeviceMemory mem;
     if (!host_import(off, size, &buf, &mem, true)) {
+        gc[k].refused = gen;
         static int warned;
         if (warned++ < 8) LOG("[vk] guest heap chunk %d (%llu MB at +%llu MB): import failed\n", k, (unsigned long long)size >> 20, (unsigned long long)off >> 20);
         return false;
@@ -7607,6 +7621,7 @@ static void draw_(CmdRec *r, bool indexed) {
         gp_draws[gp_n - 1]++;
     }
 }
+
 
 static void debug_draw(Prog *pr, CmdRec *r, bool indexed) {
     LOG("[draw] %s inst %llu mode %llu count %llu prog vs=%llx fs=%llx | vs cb %#x fs cb %#x | rt %d", indexed ? "e" : "a",

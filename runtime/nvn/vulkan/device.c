@@ -127,9 +127,11 @@ static bool lazy_heap_predicted(bool budget_ext, bool *probe) {
             if ((mp.memoryTypes[i].propertyFlags & want) == want) return false;
     }
 #endif
-    if (!whole_import_fits(budget_ext, probe)) return true;
-    if (!strstr(g_vk.props.deviceName, "RADV")) return false;
-    *probe = false;  // (RADV without the dma-buf heap: lazy chunks, no probe)
+    // DKCR's graphics memory is spread thin over the 4 GB window (kernel.c window_mapped): one import of it all ran to
+    // 3.3 GB within seconds and the driver refused it (RTX 3060, Windows). Chunks import only what the game maps and
+    // binds (exec.c gmem_lazy falls back to one import where a device can't). (LAS: one import where it fit -
+    // whole_import_fits - lazy chunks on RADV and where it didn't.)
+    (void)budget_ext;
     return true;
 }
 static atomic_bool ui_ready;

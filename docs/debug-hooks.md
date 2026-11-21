@@ -250,7 +250,9 @@ The per-GPU default switches are explained, with the GPUs they were tested on, i
 | `LARECOMP_VK_PLACEHOLDER_COLOR` | 0 / 1 | Add a placeholder colour attachment to depth-only passes. Default on for Intel. |
 | `LARECOMP_VK_HEAP_DMABUF` | 0 / 1 | Guest heap as driver memory (Linux). Default on for RADV and PanVK. |
 | `LARECOMP_VK_NO_GMEM` | 1 | Don't bind the guest heap to shaders as storage buffers. |
-| `LARECOMP_VK_GMEM_LAZY` | 0 / 1 | Import the heap to the GPU in chunks on demand. Default on where one import can't hold it. |
+| `LARECOMP_VK_GMEM_LAZY` | 0 / 1 | Import the game's memory window to the GPU in 16 MB chunks as the game binds them. Default on (DKCR maps its memory sparsely across the window), except with the Linux dma-buf heap. |
+| `LARECOMP_VK_GMEM_REMEMBER` | 1 | Import the chunks shaders reached last run (`cache/gmem_chunks.txt`) at the start. Off by default: with DKCR it led to device losses. |
+| `LARECOMP_OVERLAP_SNAP` | 1 | Copy storage buffers the CPU rewrites into a ring past the game's memory. Off by default: DKCR maps memory anywhere in the window, over the ring. |
 | `LARECOMP_VK_NO_HOST_IMPORT` | 1 | Act as if the driver can't import host memory (tests the copy path on any GPU). |
 | `LARECOMP_VK_HOST_IMPORT` | 1 | Android: import the guest heap even on a phone with under 10 GB of RAM (by default those use the copy path, issue #693). |
 | `LARECOMP_VK_CPU_BC` | 1 | Decode BC textures on the CPU even where the driver lists them (tests the path used on drivers without BC4, BC5 or BC7, issue #693). |
