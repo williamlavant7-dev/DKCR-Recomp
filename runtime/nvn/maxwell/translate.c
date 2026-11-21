@@ -872,7 +872,7 @@ static bool bindless_source(Ctx *c, int reg, int *cb, uint32_t *off, uint32_t *o
     *seen = 0;
     *off2 = 0;
     int cb2 = -1;
-    for (int i = (int)(c->pc / 8) - 1, n = 0; i >= 0 && n < 96; i--, n++) {
+    for (int i = (int)(c->pc / 8) - 1; i >= 0; i--) {  // (straight back: Unity's handles load early in long shaders)
         if (i % 4 == 0) continue;  // (scheduling words)
         uint64_t x = code[i];
         if ((int)bits(x, 0, 8) != reg) continue;
@@ -885,6 +885,10 @@ static bool bindless_source(Ctx *c, int reg, int *cb, uint32_t *off, uint32_t *o
         }
         if (t13 == 0x5c98000000000000ull && bits(x, 39, 4) == 0xf) {  // MOV r, b (all lanes): a copy
             reg = (int)bits(x, 20, 8);
+            continue;
+        }
+        if (t13 == 0x5c10000000000000ull && bits(x, 8, 8) == RZ && !bits(x, 48, 2) && !bits(x, 47, 1)) {
+            reg = (int)bits(x, 20, 8);  // IADD r, RZ, b (no negation, no carry / CC): a copy
             continue;
         }
         if (t13 == 0xef90000000000000ull && bits(x, 8, 8) == RZ && bits(x, 44, 2) == 0) {  // LDC, constant address
@@ -1736,7 +1740,8 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
                 "(%s >> (uint(ga & 3ul) * 8u)) & 0xFFu", "uint(sx8(%s >> (uint(ga & 3ul) * 8u)))",
                 "(%s >> (uint(ga & 2ul) * 8u)) & 0xFFFFu", "uint(sx16(%s >> (uint(ga & 2ul) * 8u)))"};
             // (a store: flags its range; not with copies - nothing reads the flags)
-            sp(&c->body, "      uint fw = ok ? %s(uint(ga)) : 0xFFFFFFFFu;\n", store && !maxwell_gmem_mirror ? "gfindw" : "gfind");
+            // (the table's offsets are 32-bit bytes: an address past 4 GB of the window isn't in it - exec.c gfast_prepare)
+            sp(&c->body, "      uint fw = ok && ga < 0x100000000ul ? %s(uint(ga)) : 0xFFFFFFFFu;\n", store && !maxwell_gmem_mirror ? "gfindw" : "gfind");
             // (copies: outside the table there is no heap to fall back to - reads are 0, stores are dropped)
             const char *heap = maxwell_gmem_mirror ? "false" : "ok";
             if (!store) {
