@@ -1568,6 +1568,11 @@ static void begin_pass(void) {
         if (c > 0 && ++passes_in_sub >= c) renderer_submit();
     }
     st.rt_dirty = false;
+    if (g_debug_frame && st.rt.ncolor && st.rt.color[0] && st.rt.color[0]->backend) {  // (debug) the target as the pass starts
+        char path[64];
+        snprintf(path, sizeof path, "build/pass_%03d_begin.png", debug_pass_no);
+        renderer_save_texture_tex(st.rt.color[0]->backend, path);
+    }
     VkCommandBuffer cb = vk_cmd();
     vk_barrier_ex(cb, true);  // passes, copies and dispatches see each other's results
     gw_inval_done(vk_completed_seq());  // (non-coherent heap: the GPU's finished writes)
@@ -1692,7 +1697,7 @@ static void begin_pass(void) {
             LOG(" [%u: fmt %d view %s %s", i, pass_color[i], ca[i].imageView ? "yes" : "none", placed ? "placeholder"
                 : ca[i].loadOp == VK_ATTACHMENT_LOAD_OP_CLEAR ? "clear" : "load");
             // (the image under it: its own format, size, levels / layers, samples; the view's first level and layer)
-            if (b) LOG(", image %p", (void *)b->image);
+            if (b) LOG(", image %p scale %g %g alloc %g %g", (void *)b->image, b->sx, b->sy, b->ax, b->ay);
             if (b) LOG(", image fmt %d %ux%u lv %u ly %u s %u, view lv %u ly %u", b->format, b->width, b->height, b->levels,
                        b->layers, b->samples, st.rt.has_cview[i] && (st.rt.cview[i].setmask & 1) ? st.rt.cview[i].base_level : 0,
                        st.rt.has_cview[i] && (st.rt.cview[i].setmask & 2) ? st.rt.cview[i].min_layer : 0);
@@ -6928,6 +6933,19 @@ static void draw(CmdRec *r, bool indexed) {
     if (hud_bars && hud_bars_clear()) hud_bars = false;
     wx_composite = wx_mirror = pause_backdrop = false;
     draw_(r, indexed);
+    {   // (debug) LARECOMP_DEBUG_DRAWS=<pass no>: in the debug frame, the target after each draw of that pass (draw_NNN.png)
+        static int want = -2;
+        if (want == -2) want = getenv("LARECOMP_DEBUG_DRAWS") ? atoi(getenv("LARECOMP_DEBUG_DRAWS")) : -1;
+        static int k;
+        if (g_debug_frame && want >= 0 && debug_pass_no == want && in_pass && st.rt.ncolor && st.rt.color[0]) {
+            char path[64];
+            snprintf(path, sizeof path, "build/draw_%03d.png", k++);
+            rec_CmdEndRendering(vk_cmd());
+            in_pass = false;
+            renderer_save_texture_tex(st.rt.color[0]->backend, path);
+            st.rt_dirty = true;
+        }
+    }
     hud_bars = (hud_bars || wx_composite || pause_backdrop) && hud_corners_active();
     if (wx_composite) weather_encode();
     PROF_ADD(prof_draw);
@@ -7597,23 +7615,45 @@ static void debug_draw(Prog *pr, CmdRec *r, bool indexed) {
         pr->vi->cbuf_mask, pr->fi->cbuf_mask, st.rt.ncolor);
     for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) LOG(" %ux%u/f%#x %p", st.rt.color[i]->width, st.rt.color[i]->height, st.rt.color[i]->format, (void *)st.rt.color[i]);
     if (st.rt.depth) LOG(" d%#x %p", st.rt.depth->format, (void *)st.rt.depth);
+    LOG(" | ib %llx type %llu basevtx %d vb0 %llx", indexed ? (unsigned long long)r->x[3] : 0ull, indexed ? (unsigned long long)r->x[1] : 0ull,
+        indexed ? (int)(int32_t)r->x[4] : 0, (unsigned long long)st.vbuf[0].addr);
     LOG(" | vp %.0f %.0f %.0f %.0f | attrs %#x blend %#x ds %02x%02x%02x poly %02x%02x chmask %08x\n", st.viewport[0][0], st.viewport[0][1],
         st.viewport[0][2], st.viewport[0][3], pr->vi->attr_mask, st.color_state[0], st.ds[0], st.ds[1], st.ds[2], st.poly[0], st.poly[1],
         st.channel_mask);
+    {   // vertex attributes (NVN format, stream, offset) and stream strides
+        char line[512];
+        int n = snprintf(line, sizeof line, "[draw]   attribs:");
+        for (int i = 0; i < st.nattrib && n < (int)sizeof line - 32; i++)
+            if ((pr->vi->attr_mask >> i) & 1)
+                n += snprintf(line + n, sizeof line - n, " a%d fmt %#x s%u +%u", i, st.attrib[i] & 0xFF, (st.attrib[i] >> 8) & 0x1F, st.attrib[i] >> 13);
+        for (int i = 0; i < st.nstream && i < 3 && n < (int)sizeof line - 32; i++) n += snprintf(line + n, sizeof line - n, " | stride%d %u", i, st.stream[i][0]);
+        LOG("%s\n", line);
+    }
     if (getenv("LARECOMP_DEBUG_DATA")) {  // vertex streams 0-1 and fragment cbufs: the first floats
         for (int s = 0; s < 2; s++) {
             if (!st.vbuf[s].addr) continue;
             const float *v = (const float *)(uintptr_t)st.vbuf[s].addr;
-            LOG("[draw]   vbuf%d %llx size %llu:", s, (unsigned long long)st.vbuf[s].addr, (unsigned long long)st.vbuf[s].size);
-            for (int k = 0; k < 16; k++) LOG(" %.4g", v[k]);
-            LOG("\n");
+            char line[1024];
+            int n = snprintf(line, sizeof line, "[draw]   vbuf%d %llx size %llu:", s, (unsigned long long)st.vbuf[s].addr, (unsigned long long)st.vbuf[s].size);
+            for (int k = 0; k < 16; k++) n += snprintf(line + n, sizeof line - n, " %.4g", v[k]);
+            LOG("%s\n", line);
+        }
+        for (int k = 3; k < 21; k++) {  // vertex cbufs (constant buffer k is bound slot k - 3)
+            const Range *u = &st.ubuf[0][k - 3];
+            if (!((pr->vi->cbuf_mask >> k) & 1) || !u->addr) continue;
+            const float *f = (const float *)(uintptr_t)u->addr;
+            char line[1024];
+            int n = snprintf(line, sizeof line, "[draw]   vcb%d %llx size %u:", k, (unsigned long long)u->addr, (unsigned)u->size);
+            for (int j = 0; j < 32 && j * 4 < (int)u->size && n < (int)sizeof line - 24; j++) n += snprintf(line + n, sizeof line - n, " %.5g", f[j]);
+            LOG("%s\n", line);
         }
         for (int c = 0; c < 18; c++) {
             if (!((pr->fi->cbuf_mask >> c) & 1) || !st.ubuf[1][c].addr) continue;
             const float *u = (const float *)(uintptr_t)st.ubuf[1][c].addr;
-            LOG("[draw]   fcb%d %llx size %u:", c, (unsigned long long)st.ubuf[1][c].addr, (unsigned)st.ubuf[1][c].size);
-            for (int k = 0; k < 96 && k * 4 < (int)st.ubuf[1][c].size; k++) LOG(" %.6g", u[k]);
-            LOG("\n");
+            char line[2048];
+            int n = snprintf(line, sizeof line, "[draw]   fcb%d %llx size %u:", c, (unsigned long long)st.ubuf[1][c].addr, (unsigned)st.ubuf[1][c].size);
+            for (int k = 0; k < 96 && k * 4 < (int)st.ubuf[1][c].size && n < (int)sizeof line - 24; k++) n += snprintf(line + n, sizeof line - n, " %.6g", u[k]);
+            LOG("%s\n", line);
         }
     }
     for (int i = 0; i < pr->fi->ntex && i < 64; i++) {  // fragment textures: guest size / format, allocation, scale
