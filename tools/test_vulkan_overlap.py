@@ -741,10 +741,11 @@ gmap_harness = r'''
 static uint32_t tab[(GMAP_MAX + 1) * 4];
 // gfindw (translate.c), in C: the entry whose bound bytes hold heap offset g, -1 none (also -1: inside an entry's
 // 256-byte rounding but outside its bound bytes - the load path still finds it there, the report doesn't)
-static int gfindw(uint32_t g, int n) {
+static int gfindw(uint32_t gb, int n) {  // (gb: a byte offset; the shader looks up its word)
+    uint32_t g = gb >> 2;
     for (int i = 0; i < n; i++) {
         uint32_t o = g - tab[i * 4];
-        if (g >= tab[i * 4] && o < tab[i * 4 + 1]) return (o >= (tab[i * 4 + 3] & 0xFFu) && (o >> 2) < (tab[i * 4 + 3] >> 8)) ? i : -1;
+        if (g >= tab[i * 4] && o < (tab[i * 4 + 1] >> 2)) return ((o << 2) + 3 >= (tab[i * 4 + 3] & 0xFFu) && o < (tab[i * 4 + 3] >> 8)) ? i : -1;
     }
     return -1;
 }
@@ -768,7 +769,7 @@ int main(void) {
     for (int e = 0; e < n; e++) {
         int s = __builtin_ctz(r[e].slots);
         assert(r[e].slots == (1u << s) && r[e].xlo == off[s] && r[e].xhi == off[s] + size[s]);
-        assert(tab[e * 4] == (uint32_t)r[e].lo && (tab[e * 4 + 3] & 0xFF) == off[s] - r[e].lo && (tab[e * 4 + 3] >> 8) == (off[s] + size[s] - r[e].lo + 3) / 4);
+        assert(tab[e * 4] == (uint32_t)(r[e].lo >> 2) && (tab[e * 4 + 3] & 0xFF) == off[s] - r[e].lo && (tab[e * 4 + 3] >> 8) == (off[s] + size[s] - r[e].lo + 3) / 4);
     }
     assert(used <= (uint64_t)GFAST_FLAG_WORD * 4);
     // stores into the two outputs report slots 6 and 7 (0xc0) - not the entry indexes (sorted by address: 1 and 2)
@@ -842,9 +843,9 @@ with tempfile.TemporaryDirectory(prefix='vulkan-overlap-') as temporary:
     subprocess.run(cc + ['-std=gnu11', '-O1', '-w', '-I', str(nvn), str(gl), str(nvn / 'translate.c'), '-o', str(glexe), '-lm'], check=True)
     out = subprocess.run([str(glexe)], check=True, capture_output=True, text=True, timeout=30).stdout
     flag = f'gfast_.w[{(32 << 20) // 4 - 64}u + i] = gmap[16].y;'
-    assert 'fw = ok ? gfindw(uint(ga))' in out and 'fw = ok ? gfind(uint(ga))' in out, 'the store looks up with gfindw, the load with gfind'
+    assert 'fw = ok ? gfindw(uint(ga >> 2))' in out and 'fw = ok ? gfind(uint(ga >> 2))' in out, 'the store looks up with gfindw, the load with gfind'
     assert ('uint gfindw(uint g) { uint n = gmap[16].x; for (uint i = 0u; i < n; i++) { uint o = g - gmap[i].x; '
-            'if (g >= gmap[i].x && o < gmap[i].y) { if (o >= (gmap[i].w & 0xFFu) && (o >> 2) < (gmap[i].w >> 8)) ' + flag) in out, \
+            'if (g >= gmap[i].x && o < (gmap[i].y >> 2u)) { if ((o << 2u) + 3u >= (gmap[i].w & 0xFFu) && o < (gmap[i].w >> 8)) ' + flag) in out, \
         'gfindw reports table entry i (only inside its bound bytes) with the stamp: the mapping gmap_build / gfast_flags_poll read'
     print('PASS: GLSL store report - gfindw at the store, gfind at the load, entry i flagged with the stamp inside its bound bytes')
     for name, harness in (('defer', defer_harness), ('decide', decide_harness), ('merge', merge_harness), ('snap', snap_harness), ('gmap', gmap_harness)):
@@ -865,9 +866,10 @@ with tempfile.TemporaryDirectory(prefix='vulkan-overlap-') as temporary:
             subprocess.run([str(exe), 'copies', 'on'], check=True, timeout=10, env=env)  # (no tracking needed: issue #693)
             subprocess.run([str(exe), 'copies', 'off'], check=True, timeout=10, env=dict(env, LARECOMP_GPU_OVERLAP='0'))
             continue
-        if name == 'snap':  # the hash probe (watch off), the write watch, no tracking
-            subprocess.run([str(exe)], check=True, timeout=10, env=dict(env, LARECOMP_OVERLAP_WATCH='0'))
-            subprocess.run([str(exe), 'watch'], check=True, timeout=10, env=env)
-            subprocess.run([str(exe), 'notrack'], check=True, timeout=10, env=env)
+        if name == 'snap':  # the hash probe (watch off), the write watch, no tracking (the ring is opt-in since DKCR's window)
+            senv = dict(env, LARECOMP_OVERLAP_SNAP='1')
+            subprocess.run([str(exe)], check=True, timeout=10, env=dict(senv, LARECOMP_OVERLAP_WATCH='0'))
+            subprocess.run([str(exe), 'watch'], check=True, timeout=10, env=senv)
+            subprocess.run([str(exe), 'notrack'], check=True, timeout=10, env=senv)
         else:
             subprocess.run([str(exe)], check=True, timeout=10, env=env)

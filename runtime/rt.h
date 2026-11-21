@@ -58,8 +58,11 @@ extern uint64_t g_guest_lo;
 #define SETHEAP_SIZE     0x0020000000ull                 // 512 MB
 #define SETHEAP_OFF      (GUEST_SIZE - SETHEAP_SIZE)      // (at the top, after the stacks)
 #else                                                 // (the Switch's own spacing)
-#define GUEST_SIZE       0x0340000000ull                 // 13 GB
-#define HEAP_MAX         0x0100000000ull                 // 4 GB: DKCR reserves addresses up to ~4 GB into the alias region
+#define GUEST_SIZE       0x0640000000ull                 // 25 GB
+// 16 GB: DKCR's address space manager spreads its mappings ~2.3x thinner than the memory it uses (1.8 GB over all of a
+// 4 GB region by the world map, where an allocation then failed and the game read a null pointer). The Switch gives it
+// 64 GB; 16 GB is as far as the shaders' 32-bit word offsets reach (maxwell/translate.c GMR).
+#define HEAP_MAX         0x0400000000ull
 #define HLE_OFF          0x0080000000ull
 #define TLS_OFF          0x0090000000ull
 #define HLE_HEAP_OFF     0x0092000000ull

@@ -1740,8 +1740,8 @@ static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
                 "(%s >> (uint(ga & 3ul) * 8u)) & 0xFFu", "uint(sx8(%s >> (uint(ga & 3ul) * 8u)))",
                 "(%s >> (uint(ga & 2ul) * 8u)) & 0xFFFFu", "uint(sx16(%s >> (uint(ga & 2ul) * 8u)))"};
             // (a store: flags its range; not with copies - nothing reads the flags)
-            // (the table's offsets are 32-bit bytes: an address past 4 GB of the window isn't in it - exec.c gfast_prepare)
-            sp(&c->body, "      uint fw = ok && ga < 0x100000000ul ? %s(uint(ga)) : 0xFFFFFFFFu;\n", store && !maxwell_gmem_mirror ? "gfindw" : "gfind");
+            // (the table is in words: exec.c gmap_build)
+            sp(&c->body, "      uint fw = ok ? %s(uint(ga >> 2)) : 0xFFFFFFFFu;\n", store && !maxwell_gmem_mirror ? "gfindw" : "gfind");
             // (copies: outside the table there is no heap to fall back to - reads are 0, stores are dropped)
             const char *heap = maxwell_gmem_mirror ? "false" : "ok";
             if (!store) {
@@ -2400,13 +2400,15 @@ static ShaderInfo *glsl_finish(Ctx *c, bool any_branch, bool dbg) {
         sp(&s, "layout(std140, set = %d, binding = %d) uniform GMap { uvec4 gmap[%d]; };\n", set, GMAP_BUFFER_INDEX, GMAP_MAX + 1);
         sp(&s, "layout(std430, set = %d, binding = %d) %sbuffer GFast { uint w[]; } gfast_;\n", set, GFAST_BUFFER_INDEX,
            c->uses_gmem_store ? "" : "readonly ");
+        // (gmap[i]: x = the entry's first word in the window, y = its bytes, z = its first word in gfast, w = the bound
+        // bytes - those before the first in the low 8 bits, the words up to the last above; g: a word index)
         sp(&s, "uint gfind(uint g) { uint n = gmap[%d].x; for (uint i = 0u; i < n; i++) { uint o = g - gmap[i].x; "
-               "if (g >= gmap[i].x && o < gmap[i].y) return gmap[i].z + (o >> 2); } return 0xFFFFFFFFu; }\n", GMAP_MAX);
+               "if (g >= gmap[i].x && o < (gmap[i].y >> 2u)) return gmap[i].z + o; } return 0xFFFFFFFFu; }\n", GMAP_MAX);
         if (c->uses_gmem_store && !maxwell_gmem_mirror)  // (the stores' lookup: a store inside entry i's bound bytes - gmap[i].w, exec.c gmap_build -
                                  //  writes the dispatch's stamp to GFast word GFAST_FLAG_WORD + i; the padding doesn't count)
             sp(&s, "uint gfindw(uint g) { uint n = gmap[%d].x; for (uint i = 0u; i < n; i++) { uint o = g - gmap[i].x; "
-                   "if (g >= gmap[i].x && o < gmap[i].y) { if (o >= (gmap[i].w & 0xFFu) && (o >> 2) < (gmap[i].w >> 8)) "
-                   "gfast_.w[%uu + i] = gmap[%d].y; return gmap[i].z + (o >> 2); } } "
+                   "if (g >= gmap[i].x && o < (gmap[i].y >> 2u)) { if ((o << 2u) + 3u >= (gmap[i].w & 0xFFu) && o < (gmap[i].w >> 8)) "
+                   "gfast_.w[%uu + i] = gmap[%d].y; return gmap[i].z + o; } } "
                    "return 0xFFFFFFFFu; }\n", GMAP_MAX, GFAST_FLAG_WORD, GMAP_MAX);
     }
     if (c->uses_rscale && stage != STAGE_VERTEX) {

@@ -164,7 +164,7 @@ extern bool maxwell_gmem_mirror;
 // dispatch loop can't hoist them), no table read and no miss path (exec.c gmem_direct_pick). The table after them.
 #define GMEM_DIRECT_MAX 4
 #define GMEM_DIRECT_BINDING 2  // lazy: GDir<k> at 2 + k (k < GMEM_DIRECT_MAX; unused: a small zero buffer)
-#define GMEM_CHUNKS_MAX 256  // chunks at most (HEAP_MAX in 16 MB chunks is 208)
+#define GMEM_CHUNKS_MAX 1024  // chunks at most (HEAP_MAX in 16 MB chunks: 1024 on the desktop, 208 on iOS)
 #define GMEM_CHUNK_SET(stage) ((stage) == STAGE_COMPUTE ? 1 : 2)
 #define GMEM_CHUNK_BINDING 0  // windows: GMem<k> at binding k; lazy: the GChunks table
 #define GMEM_MISS_BINDING 1   // lazy: GMiss { uint n[GMEM_CHUNKS_MAX]; uint w[GMEM_CHUNKS_MAX]; } (accesses, lowest word hit)

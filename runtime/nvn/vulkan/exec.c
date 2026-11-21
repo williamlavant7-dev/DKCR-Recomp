@@ -529,7 +529,7 @@ static char gp_label[512][112];
 static uint32_t gp_draws[512];
 // LARECOMP_VK_DEVLOST_TRACE=1: the last 64 GPU operations, dumped on device loss (with LARECOMP_SYNC_SUBMIT=1 the
 // dump ends with the command list that faulted).
-static char dl_ring[64][128];
+static char dl_ring[1024][128];
 static unsigned dl_n;
 static int dl_on = -1;
 static void dl_note(const char *fmt, ...) {
@@ -537,14 +537,14 @@ static void dl_note(const char *fmt, ...) {
     if (!dl_on) return;
     va_list ap;
     va_start(ap, fmt);
-    vsnprintf(dl_ring[dl_n++ & 63], sizeof dl_ring[0], fmt, ap);
+    vsnprintf(dl_ring[dl_n++ & 1023], sizeof dl_ring[0], fmt, ap);
     va_end(ap);
 }
 void vk_dl_note_upload(void *img, uint32_t w, uint32_t h, uint32_t lv) { dl_note("  upload %p %ux%u lv%u", img, w, h, lv); }
 void vk_devlost_dump(void) {
     if (!dl_on) return;
     LOG("[vk] last GPU operations before the device loss (oldest first):\n");
-    for (unsigned i = dl_n > 64 ? dl_n - 64 : 0; i < dl_n; i++) LOG("[vk]   %s\n", dl_ring[i & 63]);
+    for (unsigned i = dl_n > 1024 ? dl_n - 1024 : 0; i < dl_n; i++) LOG("[vk]   %s\n", dl_ring[i & 1023]);
 }
 static void gp_mark(VkCommandBuffer cb, const char *fmt, ...) {
     if (!g_gpuprof_frame || gp_n >= 511) return;
@@ -4892,7 +4892,7 @@ static int gmap_build(const uint64_t *off, const uint64_t *size, uint64_t top, u
         uint64_t len = r[i].hi - r[i].lo;
         if (o + len > room) return -1;
         r[i].off = o;
-        tab[i * 4 + 0] = (uint32_t)r[i].lo;
+        tab[i * 4 + 0] = (uint32_t)(r[i].lo >> 2);  // (words: 32 bits reach the 16 GB window; lo is 256-aligned)
         tab[i * 4 + 1] = (uint32_t)len;
         tab[i * 4 + 2] = (uint32_t)(o >> 2);
         tab[i * 4 + 3] = (uint32_t)(r[i].xlo - r[i].lo) | (uint32_t)((r[i].xhi - r[i].lo + 3) >> 2) << 8;
@@ -7468,6 +7468,10 @@ static void draw_(CmdRec *r, bool indexed) {
                              si->npush * 4u, pw);
     }
     st.ubuf[0][0] = hud_ubuf;
+    if (pr->vi->uses_gmem || pr->fi->uses_gmem)
+        dl_note("  draw vs %llx fs %llx gmem %d%d store %d%d", (unsigned long long)st.program->stages[0].code_addr,
+                (unsigned long long)st.program->stages[1].code_addr, pr->vi->uses_gmem, pr->fi->uses_gmem, pr->vi->uses_gmem_store,
+                pr->fi->uses_gmem_store);
     if (gc_shift && (pr->vi->uses_gmem || pr->fi->uses_gmem))
         gmem_chunk_bind(cb, VK_PIPELINE_BIND_POINT_GRAPHICS, pr->layout, GMEM_CHUNK_SET(STAGE_FRAGMENT),
                         (pr->vi->uses_gmem ? 1u << STAGE_VERTEX : 0) | (pr->fi->uses_gmem ? 1u << STAGE_FRAGMENT : 0));
