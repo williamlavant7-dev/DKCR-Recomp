@@ -30,6 +30,10 @@ static uint32_t device_integer(uint32_t which) {
         [46] = 1, [47] = 5, [48] = 1, [49] = 15,
         [50] = 256, [51] = 1, [52] = 0, [53] = 0, [54] = 0, [55] = 256, [56] = 1, [57] = 0x1000,
         [58] = 1, [59] = 1, [60] = 1, [61] = 1, [62] = 1, [63] = 1, [64] = 1,
+        // DKCR's Unity reads 94 (an NVN newer than LAS's) into its graphics caps next to the anisotropy limit and,
+        // at 0, rejects every shader of its own (all drawn with its magenta error shader). The name and the Switch's
+        // value aren't known; 16384 (a texture size limit's worth) lets every shader load.
+        [94] = 16384,
     };
     return which < sizeof v / sizeof *v ? v[which] : 0;
 }

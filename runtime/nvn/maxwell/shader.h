@@ -52,6 +52,7 @@ typedef struct {
     uint8_t type;            // TEXTYPE_*
     bool shadow, is_array, is_image, bindless;
     uint32_t bindless_cbuf, bindless_offset;
+    uint32_t bindless_offset2;  // bindless: a second word of the same buffer ORed in (NVN's separate sampler), or 0
 } ShaderTexture;
 
 typedef struct {

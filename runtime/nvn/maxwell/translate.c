@@ -105,6 +105,7 @@ static void emit_recolour(Str *s, const char *c, const char *v3, const char *v4)
 typedef struct {
     const uint8_t *code;   // first instruction group
     size_t ninsts;         // number of 8-byte words to scan
+    uint32_t pc;           // the instruction being translated (emit_insn)
     int stage;
     const ShaderKey *key;
     ShaderInfo *info;
@@ -504,12 +505,20 @@ static bool emit_half(Ctx *c, uint64_t w) {
         hstore(c, d, t, merge, sat);
         return true;
     }
-    // ---- HSETP2 / HSET2 (reg forms)
-    if ((op & 0xfff8) == 0x5d20 || (op & 0xfff8) == 0x5d18) {
-        bool setp = (op & 0xfff8) == 0x5d20;
+    // ---- HSETP2 / HSET2: reg (5d20 / 5d18), cbuf (7e80 / 7c80) and immediate (7e00 / 7c00) forms. Field layout per
+    // Ryujinx's InstDecoders (InstHsetp2* / InstHset2*): the cbuf and immediate forms move the compare to 49 and the
+    // H_AND / BF bit to 53. DKCR's Unity vertex shaders use the cbuf form.
+    int hform = ((op & 0xfff8) == 0x5d20 || (op & 0xfff8) == 0x5d18) ? 0 : (op & 0xfc00) == 0x7c00 ? ((op & 0x80) ? 1 : 2) : -1;
+    if (hform >= 0) {
+        bool setp = hform == 0 ? (op & 0xfff8) == 0x5d20 : (op & 0x0200) != 0;
         const char *x = HS(R(a), (int)bits(w, 47, 2), bits(w, 43, 1), bits(w, 44, 1));
-        const char *y = HS(R((int)bits(w, 20, 8)), (int)bits(w, 28, 2), bits(w, 31, 1), bits(w, 30, 1));
-        int cop = (int)bits(w, 35, 4), bop = (int)bits(w, 45, 2);
+        const char *y;
+        char hb[256], hib[32];
+        if (hform == 0) y = HS(R((int)bits(w, 20, 8)), (int)bits(w, 28, 2), bits(w, 31, 1), bits(w, 30, 1));
+        else if (hform == 1) y = HS(cbuf_ref(c, (int)bits(w, 34, 5), bits(w, 20, 14) * 4, NULL, hb), 1, bits(w, 56, 1), bits(w, 54, 1));
+        else { sprintf(hib, "0x%08xu", himm(w)); y = HS(hib, 0, false, false); }
+        int cop = (int)bits(w, hform ? 49 : 35, 4), bop = (int)bits(w, 45, 2);
+        int andbit = hform ? 53 : 49;
         const char *pp = P((int)bits(w, 39, 3), bits(w, 42, 1));
         char lx[512], ly[512];
         sp(&c->body, "    { float2 hx_ = %s, hy_ = %s; bool pp = %s;\n", x, y, pp);
@@ -518,7 +527,7 @@ static bool emit_half(Ctx *c, uint64_t w) {
         sp(&c->body, "      bool l = %s, h = %s;\n", lx, ly);
         if (setp) {
             int pa = (int)bits(w, 3, 3), pb = (int)bits(w, 0, 3);
-            if (bits(w, 49, 1)) {  // .H_AND: each half is combined with the predicate first, then they're ANDed
+            if (bits(w, andbit, 1)) {  // .H_AND: each half is combined with the predicate first, then they're ANDed
                 sp(&c->body, "      l = (l %s pp) && (h %s pp); h = !l;\n", bool_op(bop), bool_op(bop));
                 if (pa != PT) { c->pred_used[pa] = 1; sp(&c->body, "      p%d = l;\n", pa); }
                 if (pb != PT) { c->pred_used[pb] = 1; sp(&c->body, "      p%d = h;\n", pb); }
@@ -527,7 +536,7 @@ static bool emit_half(Ctx *c, uint64_t w) {
                 if (pb != PT) { c->pred_used[pb] = 1; sp(&c->body, "      p%d = h %s pp;\n", pb, bool_op(bop)); }
             }
         } else {
-            bool bf = bits(w, 49, 1);
+            bool bf = bits(w, andbit, 1);
             if (d != RZ) {
                 c->reg_used[d] = 1;
                 sp(&c->body, "      l = l %s pp; h = h %s pp;\n", bool_op(bop), bool_op(bop));
@@ -854,7 +863,72 @@ static void emit_texs(Ctx *c, uint64_t w, bool fetch) {
     write_tex_result(c, slot, call, mask, d0, d1, true, !bits(w, 59, 1));  // 0xd0/0xd2: .F16 results
 }
 
-// TEX (full form): coordinates from consecutive registers at gpr8, extra parameters at gpr20.
+// TEX.B (bindless) takes its texture | sampler handle from a register (gpr20; its parameters follow it). Find where
+// the shader loaded it, so the renderer can read the handle from the same place at draw time: LDC or MOV from a
+// constant buffer, maybe ORed with a second word of the same buffer. DKCR's Unity: MOV r, c2[texture] then
+// LOP.OR r, r, c2[sampler] - NVN's separate texture and sampler handles (exec's shader_texture_handle).
+static bool bindless_source(Ctx *c, int reg, int *cb, uint32_t *off, uint32_t *off2, uint64_t *seen) {
+    const uint64_t *code = (const uint64_t *)c->code;
+    *seen = 0;
+    *off2 = 0;
+    int cb2 = -1;
+    for (int i = (int)(c->pc / 8) - 1, n = 0; i >= 0 && n < 96; i--, n++) {
+        if (i % 4 == 0) continue;  // (scheduling words)
+        uint64_t x = code[i];
+        if ((int)bits(x, 0, 8) != reg) continue;
+        uint64_t t13 = x & 0xfff8000000000000ull;
+        if (t13 == 0x4c40000000000000ull && bits(x, 41, 2) == 1 && !*off2 && !bits(x, 39, 2) && !bits(x, 44, 4)) {
+            // LOP.OR r, a, c[b][o] (no inversion, no predicate output): the rest comes from a
+            cb2 = (int)bits(x, 34, 5); *off2 = (uint32_t)bits(x, 20, 14) * 4;
+            reg = (int)bits(x, 8, 8);
+            continue;
+        }
+        if (t13 == 0x5c98000000000000ull && bits(x, 39, 4) == 0xf) {  // MOV r, b (all lanes): a copy
+            reg = (int)bits(x, 20, 8);
+            continue;
+        }
+        if (t13 == 0xef90000000000000ull && bits(x, 8, 8) == RZ && bits(x, 44, 2) == 0) {  // LDC, constant address
+            *cb = (int)bits(x, 36, 5); *off = (uint32_t)sbits(x, 20, 16);
+            return cb2 < 0 || cb2 == *cb;
+        }
+        if (t13 == 0x4c98000000000000ull) {  // MOV from a constant buffer
+            *cb = (int)bits(x, 34, 5); *off = (uint32_t)bits(x, 20, 14) * 4;
+            return cb2 < 0 || cb2 == *cb;
+        }
+        // stores and flow control don't write gpr0..7; anything else writing the register ends the search
+        if ((x >> 60) == 0xe) continue;
+        *seen = x;
+        return false;
+    }
+    return false;
+}
+
+static int tex_slot_bindless(Ctx *c, int cb, uint32_t off, uint32_t off2, int type, bool shadow, bool array) {
+    for (int s = 0; s < c->info->ntex; s++) {
+        ShaderTexture *t = &c->info->tex[s];
+        if (t->bindless && t->bindless_cbuf == (uint32_t)cb && t->bindless_offset == off && t->bindless_offset2 == off2) {
+            if (c->glsl && (t->type != type || t->shadow != shadow)) fail(c, "texture c%d[%#x] used as two types", cb, off);
+            return s;
+        }
+    }
+    int s = c->info->ntex++;
+    if (s >= 31) { fail(c, "too many textures"); return 0; }
+    c->tex_weak[s] = false;
+    ShaderTexture *t = &c->info->tex[s];
+    t->handle_offset = 0;
+    t->bindless = true;
+    t->bindless_cbuf = (uint32_t)cb;
+    t->bindless_offset = off;
+    t->bindless_offset2 = off2;
+    t->type = (uint8_t)type;
+    t->shadow = shadow;
+    t->is_array = array;
+    if (cb != 0) cbuf_ref(c, cb, off, NULL, alloca(256));  // (the buffer is read on the host: keep it bound)
+    return s;
+}
+
+// TEX (full form): coordinates from consecutive registers at gpr8, extra parameters at gpr20 (TEX.B: after the
+// handle there).
 static void emit_tex(Ctx *c, uint64_t w, bool bindless) {
     int d = (int)bits(w, 0, 8), a = (int)bits(w, 8, 8), b = (int)bits(w, 20, 8);
     uint32_t index = bindless ? 0 : (uint32_t)bits(w, 36, 13);
@@ -862,13 +936,19 @@ static void emit_tex(Ctx *c, uint64_t w, bool bindless) {
     bool array = bits(w, 28, 1), dc = bits(w, 50, 1), aoffi = bindless ? bits(w, 36, 1) : bits(w, 54, 1);
     uint32_t mask = (uint32_t)bits(w, 31, 4);
     int lod_mode = bindless ? (int)bits(w, 37, 3) : (int)bits(w, 55, 3);  // 0 none, 1 lz, 2 lb, 3 ll, 6 lba, 7 lla
-    if (bindless) { fail(c, "bindless tex"); return; }
+    int bcb = -1;
+    uint32_t boff = 0, boff2 = 0;
+    if (bindless) {
+        uint64_t seen;
+        if (!bindless_source(c, b, &bcb, &boff, &boff2, &seen)) { fail(c, "bindless tex: handle r%d not from a constant buffer (%016llx)", b, (unsigned long long)seen); return; }
+        b++;
+    }
     int type = target == 0 ? (array ? TEXTYPE_1D_ARRAY : TEXTYPE_1D)
              : target == 1 ? (array ? TEXTYPE_2D_ARRAY : TEXTYPE_2D)
              : target == 2 ? TEXTYPE_3D
                            : (array ? TEXTYPE_CUBE_ARRAY : TEXTYPE_CUBE);
     int ncoord = target == 0 ? 1 : target == 1 ? 2 : 3;
-    int slot = tex_slot(c, index, type, dc, array);
+    int slot = bindless ? tex_slot_bindless(c, bcb, boff, boff2, type, dc, array) : tex_slot(c, index, type, dc, array);
     if (c->glsl) {  // same register layout as below
         char cs[3][40], lay[96], lodv[48], offv[96], drv[48], gcall[4096];
         const char *co[3], *layp = NULL, *lodp = NULL, *offp = NULL, *drp = NULL;
@@ -1043,6 +1123,7 @@ static void stack_pop(Ctx *c, const char *n, bool keep, uint32_t pc) {  // keep:
 
 static void emit_insn(Ctx *c, uint64_t w, uint32_t pc) {
     char t[2048], u[2048];
+    c->pc = pc;
     int d = (int)bits(w, 0, 8), a = (int)bits(w, 8, 8);
     int pr = (int)bits(w, 16, 3);
     bool prn = bits(w, 19, 1);
@@ -3215,6 +3296,8 @@ ShaderInfo *maxwell_translate(const uint8_t *blob, size_t max_size, int stage, c
         if (w == 0 && i > 4) break;
         end = i + 1;
     }
+    c->code = code;
+    c->ninsts = end;
     c->lmem_words = c->glsl ? lmem_size((const uint64_t *)code, end, stage == STAGE_COMPUTE ? NULL : sph) : LMEM_WORDS;
     // collect branch targets (labels)
     uint8_t *label = calloc(end + 4, 1);

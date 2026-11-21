@@ -263,6 +263,7 @@ static struct {
     int nstream;
     Range vbuf[16], ubuf[6][18], sbuf[6][16];
     uint64_t tex[6][32], img[6][8];
+    uint32_t sep_tex[6][256], sep_smp[6][256];  // NVN separate texture / sampler handles (bind_handles in cmdbuf.c)
     NvnDescPool *tpool, *spool;
     float viewport[16][4];
     int32_t scissor[16][4];
@@ -2178,9 +2179,38 @@ static void snapshots_invalidate(NvnTexture *t) {  // NULL = all
     for (int i = 0; i < 8; i++) if ((!t || snap_tex[i] == t) && snap_ok[i]) { snap_ok[i] = false; snap_why[i] = snap_reason; }
 }
 
+// A shader texture's handle, as exec.c's shader_texture_handle (bound slots, bindless TEX.B, NVN separate handles).
+static uint64_t shader_texture_handle(int stage, const ShaderTexture *st_) {
+    if (!st_->bindless) {
+        int slot = ((int)st_->handle_offset - 0x20) / 8;
+        return (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+    }
+    uint32_t k = st_->bindless_cbuf, off = st_->bindless_offset;
+    uint64_t addr = 0, size = 0;
+    if (k == 2) {
+        uint32_t o[2] = {off, st_->bindless_offset2}, h = 0;
+        for (int j = 0; j < 2; j++) {
+            if (!o[j] || (o[j] & 3)) continue;
+            if (o[j] >= 0x168 && o[j] < 0x568) h |= st.sep_tex[stage][(o[j] - 0x168) / 4];
+            else if (o[j] >= 0x568 && o[j] < 0x968) h |= st.sep_smp[stage][(o[j] - 0x568) / 4];
+        }
+        return h;
+    }
+    if (k == 0) {
+        int slot = ((int)off - 0x20) / 8;
+        return (off & 7) == 0 && slot >= 0 && slot < 32 ? st.tex[stage][slot] : 0;
+    } else if (k == 1) {
+        NvnShaderStage *ss = &st.program->stages[stage];
+        addr = ss->code_addr + ss->const_offset, size = ss->const_size;
+    } else if (k >= 3 && k - 3 < 18) {
+        addr = st.ubuf[stage][k - 3].addr, size = st.ubuf[stage][k - 3].size;
+    }
+    if (!addr || (uint64_t)off + 4 > size) return 0;
+    return *(const uint32_t *)(uintptr_t)(addr + off);
+}
+
 static NvnTexture *shader_texture_object(int stage, ShaderTexture *st_) {
-    int slot = ((int)st_->handle_offset - 0x20) / 8;
-    uint64_t h = (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+    uint64_t h = shader_texture_handle(stage, st_);
     uint32_t tic = h & 0xFFFFF;
     if (!h || !st.tpool || tic >= (uint32_t)st.tpool->count) return NULL;
     return ((NvnTexEntry *)st.tpool->entries)[tic].tex;
@@ -2297,8 +2327,7 @@ static void bind_textures(int stage, ShaderInfo *si) {
     NvnSamplerDesc *mdesc[64];
     for (int i = 0; i < si->ntex; i++) {
         ShaderTexture *st_ = &si->tex[i];
-        int slot = ((int)st_->handle_offset - 0x20) / 8;  // 64-bit handles from offset 0x20
-        uint64_t h = (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+        uint64_t h = shader_texture_handle(stage, st_);
         id<MTLTexture> tex = nil;
         id<MTLSamplerState> smp = nil;
         uint32_t tic = h & 0xFFFFF, tsc = (uint32_t)(h >> 20) & 0xFFF;
@@ -3046,8 +3075,7 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     NvnSamplerDesc *mdesc[64];
     for (int i = 0; i < si->ntex; i++) {
         ShaderTexture *st_ = &si->tex[i];
-        int slot = ((int)st_->handle_offset - 0x20) / 8;
-        uint64_t h = (slot >= 0 && slot < 32) ? st.tex[5][slot] : 0;
+        uint64_t h = shader_texture_handle(5, st_);
         id<MTLTexture> tex = nil;
         id<MTLSamplerState> smp = nil;
         uint32_t tic = h & 0xFFFFF, tsc = (uint32_t)(h >> 20) & 0xFFF;
@@ -5938,6 +5966,11 @@ static void exec_list(uint64_t handle, int depth) {
                 memcpy(&st.sbuf[r->x[0]][r->x[1] + i], (uint8_t *)x + i * 16, 16);
             break;
         case CMD_BIND_TEXTURES:
+            if (r->x[6] == 1 || r->x[6] == 2) {  // separate texture / sampler handles
+                for (uint64_t i = 0; i < r->x[2] && r->x[1] + i < 256 && r->x[0] < 6; i++)
+                    (r->x[6] == 1 ? st.sep_tex : st.sep_smp)[r->x[0]][r->x[1] + i] = (uint32_t)((uint64_t *)x)[i];
+                break;
+            }
             for (uint64_t i = 0; i < r->x[2] && r->x[1] + i < 32 && r->x[0] < 6; i++)
                 memcpy(&st.tex[r->x[0]][r->x[1] + i], (uint8_t *)x + i * 8, 8);
             break;

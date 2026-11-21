@@ -1039,6 +1039,7 @@ static struct {
     int nstream;
     Range vbuf[16], ubuf[6][18], sbuf[6][16];
     uint64_t tex[6][32], img[6][8];
+    uint32_t sep_tex[6][256], sep_smp[6][256];  // NVN separate texture / sampler handles (bind_handles in cmdbuf.c)
     NvnDescPool *tpool, *spool;
     float viewport[16][4];
     int32_t scissor[16][4];
@@ -2701,9 +2702,41 @@ typedef struct { NvnTexture *key; TexBackend copy; } Snap;
 static Snap snaps[16];
 static int nsnaps;
 
+// A shader texture's 32-bit texture | sampler handle: a bound slot of the driver constant buffer (64-bit handles from
+// offset 0x20), or, for bindless sampling (TEX.B; translate.c's bindless_source), the word in the uniform buffer the
+// shader loads it from. That buffer is read as it is when the draw runs, not as it was recorded: DKCR's Unity writes
+// a material's handles once, before the draws that use it.
+static uint64_t shader_texture_handle(int stage, const ShaderTexture *st_) {
+    if (!st_->bindless) {
+        int slot = ((int)st_->handle_offset - 0x20) / 8;
+        return (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+    }
+    uint32_t k = st_->bindless_cbuf, off = st_->bindless_offset;
+    uint64_t addr = 0, size = 0;
+    if (k == 2) {  // NVN's separate handles: textures from 0x168, samplers from 0x568 (256 each), as DKCR's shaders read them
+        uint32_t o[2] = {off, st_->bindless_offset2}, h = 0;
+        for (int j = 0; j < 2; j++) {
+            if (!o[j] || (o[j] & 3)) continue;
+            if (o[j] >= 0x168 && o[j] < 0x568) h |= st.sep_tex[stage][(o[j] - 0x168) / 4];
+            else if (o[j] >= 0x568 && o[j] < 0x968) h |= st.sep_smp[stage][(o[j] - 0x568) / 4];
+        }
+        return h;
+    }
+    if (k == 0) {
+        int slot = ((int)off - 0x20) / 8;
+        return (off & 7) == 0 && slot >= 0 && slot < 32 ? st.tex[stage][slot] : 0;
+    } else if (k == 1) {
+        NvnShaderStage *ss = &st.program->stages[stage];
+        addr = ss->code_addr + ss->const_offset, size = ss->const_size;
+    } else if (k >= 3 && k - 3 < 18) {
+        addr = st.ubuf[stage][k - 3].addr, size = st.ubuf[stage][k - 3].size;
+    }
+    if (!addr || (uint64_t)off + 4 > size) return 0;
+    return *(const uint32_t *)(uintptr_t)(addr + off);
+}
+
 static NvnTexture *shader_texture_object(int stage, ShaderTexture *st_) {
-    int slot = ((int)st_->handle_offset - 0x20) / 8;
-    uint64_t h = (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+    uint64_t h = shader_texture_handle(stage, st_);
     uint32_t tic = h & 0xFFFFF;
     if (!h || !st.tpool || tic >= (uint32_t)st.tpool->count) return NULL;
     return ((NvnTexEntry *)st.tpool->entries)[tic].tex;
@@ -5774,8 +5807,7 @@ static void shadow_slot_check(int stage, const ShaderTexture *st_, int i, uint64
 
 static void texture_info(int stage, ShaderInfo *si, int i, VkDescriptorImageInfo *out, float sc[2], uint32_t wh[2], float fr[2]) {
     ShaderTexture *st_ = &si->tex[i];
-    int slot = ((int)st_->handle_offset - 0x20) / 8;  // 64-bit handles from offset 0x20
-    uint64_t h = (slot >= 0 && slot < 32) ? st.tex[stage][slot] : 0;
+    uint64_t h = shader_texture_handle(stage, st_);
     VkImageView view = VK_NULL_HANDLE;
     VkSampler smp = VK_NULL_HANDLE;
     uint32_t tic = h & 0xFFFFF, tsc = (uint32_t)(h >> 20) & 0xFFF;
@@ -8616,6 +8648,11 @@ static void exec_list(uint64_t handle, int depth) {
                 memcpy(&st.sbuf[r->x[0]][r->x[1] + i], (uint8_t *)x + i * 16, 16);
             break;
         case CMD_BIND_TEXTURES:
+            if (r->x[6] == 1 || r->x[6] == 2) {  // separate texture / sampler handles
+                for (uint64_t i = 0; i < r->x[2] && r->x[1] + i < 256 && r->x[0] < 6; i++)
+                    (r->x[6] == 1 ? st.sep_tex : st.sep_smp)[r->x[0]][r->x[1] + i] = (uint32_t)((uint64_t *)x)[i];
+                break;
+            }
             for (uint64_t i = 0; i < r->x[2] && r->x[1] + i < 32 && r->x[0] < 6; i++)
                 memcpy(&st.tex[r->x[0]][r->x[1] + i], (uint8_t *)x + i * 8, 8);
             break;

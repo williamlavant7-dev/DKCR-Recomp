@@ -153,13 +153,23 @@ NVN(nvnCommandBufferBindStorageBuffer) {
     memcpy(r->extra, &s.x[3], 16);
 }
 // (cmd, stage, first, count, const handle*)
-NVN(nvnCommandBufferBindTextures) { record_copy(c, CMD_BIND_TEXTURES, 4, (uint32_t)A(3) * 8); }
-NVN(nvnCommandBufferBindTexture) {
-    Snap s = snap(c);
-    CmdRec *r = record(c, CMD_BIND_TEXTURES, 8, &s);
-    r->x[0] = s.x[1]; r->x[1] = s.x[2]; r->x[2] = 1;
-    memcpy(r->extra, &s.x[3], 8);
+// Textures and samplers: x[6] says which table. 0: the combined handles (driver constant buffer, 64-bit handles from
+// 0x20); 1 / 2: NVN's separate texture / sampler handles, which the shader reads from its constant buffer 2 and ORs
+// together for a bindless sample (DKCR's Unity binds them; exec's shader_texture_handle).
+static void bind_handles(Cpu *c, int kind, bool one) {
+    CmdRec *r;
+    if (one) {
+        Snap s = snap(c);
+        r = record(c, CMD_BIND_TEXTURES, 8, &s);
+        r->x[0] = s.x[1]; r->x[1] = s.x[2]; r->x[2] = 1;
+        memcpy(r->extra, &s.x[3], 8);
+    } else {
+        r = record_copy(c, CMD_BIND_TEXTURES, 4, (uint32_t)A(3) * 8);
+    }
+    r->x[6] = (uint64_t)kind;
 }
+NVN(nvnCommandBufferBindTextures) { bind_handles(c, 0, false); }
+NVN(nvnCommandBufferBindTexture) { bind_handles(c, 0, true); }
 NVN(nvnCommandBufferBindImages) { record_copy(c, CMD_BIND_IMAGES, 4, (uint32_t)A(3) * 8); }
 NVN(nvnCommandBufferBindImage) {
     Snap s = snap(c);
@@ -167,15 +177,10 @@ NVN(nvnCommandBufferBindImage) {
     r->x[0] = s.x[1]; r->x[1] = s.x[2]; r->x[2] = 1;
     memcpy(r->extra, &s.x[3], 8);
 }
-NVN(nvnCommandBufferBindSeparateTextures) { record_copy(c, CMD_BIND_TEXTURES, 4, (uint32_t)A(3) * 8); }
-NVN(nvnCommandBufferBindSeparateTexture) {
-    Snap s = snap(c);
-    CmdRec *r = record(c, CMD_BIND_TEXTURES, 8, &s);
-    r->x[0] = s.x[1]; r->x[1] = s.x[2]; r->x[2] = 1;
-    memcpy(r->extra, &s.x[3], 8);
-}
-NVN(nvnCommandBufferBindSeparateSamplers) { (void)c; }
-NVN(nvnCommandBufferBindSeparateSampler) { (void)c; }
+NVN(nvnCommandBufferBindSeparateTextures) { bind_handles(c, 1, false); }
+NVN(nvnCommandBufferBindSeparateTexture) { bind_handles(c, 1, true); }
+NVN(nvnCommandBufferBindSeparateSamplers) { bind_handles(c, 2, false); }
+NVN(nvnCommandBufferBindSeparateSampler) { bind_handles(c, 2, true); }
 NVN(nvnCommandBufferBindTransformFeedbackBuffers) { (void)c; }
 NVN(nvnCommandBufferBindTransformFeedbackBuffer) { (void)c; }
 NVN(nvnCommandBufferBindCoverageModulationTable) { (void)c; }
