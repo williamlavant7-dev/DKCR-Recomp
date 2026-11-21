@@ -524,6 +524,11 @@ static uint32_t svc_wait_process_wide_key(uint64_t mutex, uint64_t key, uint32_t
     pthread_mutex_lock(&g_klock);
     KThread *t = t_cur;
     uint32_t mbefore = rdw(mutex), kbefore = rdw(key);
+    // The key says "waiters" before the mutex is let go, as Horizon does. nn::os's Signal / Broadcast read the key in
+    // user space and skip the svc when it's 0 (InternalConditionVariableImplByHorizon); set after the release, a
+    // thread could take the mutex in between, change the state, see 0 and not signal - and this one slept on with its
+    // condition met (DKCR: Unity's graphics worker on a semaphore with count 1, the game hung after its first frames).
+    __atomic_store_n(u32p(key), 1, __ATOMIC_SEQ_CST);
     mutex_release(mutex);
     bool traced = !kt_timed_key(key, timeout >= 0);
     if (traced) kt(KT_WAIT, key, mutex, kbefore, mbefore, rdw(mutex), 0xffffffffu);
@@ -531,7 +536,6 @@ static uint32_t svc_wait_process_wide_key(uint64_t mutex, uint64_t key, uint32_t
     t->wait_addr = key;
     t->wait_mutex = mutex;
     t->wait_tag = tag;
-    __atomic_store_n(u32p(key), 1, __ATOMIC_SEQ_CST);
     // Timed out / cancelled: returns without the mutex, as Horizon does - nn::os takes it again itself (TimedWait on
     // 0xEA01 calls the critical section's Enter). Taking it here as well left the thread holding it when Enter ran:
     // Enter saw its own handle in the lock word and ArbitrateLock waited on itself forever (issue #19's thread dump: a
@@ -1083,10 +1087,13 @@ void kernel_dump_threads(const char *prefix) {
             LOG("%s   sp %llx\n", prefix, (unsigned long long)t->cpu.sp);
         }
     }
-    // (debug) LARECOMP_HANG_FINDPTR=<hex value>: the 8-byte words equal to it within 16 MB of it (what points to an
-    // object: a semaphore's owner); LARECOMP_HANG_MEM=<hex addr>,<hex len>;...: guest memory. Both in the [hang] dump.
-    if (getenv("LARECOMP_HANG_FINDPTR")) {
-        unsigned long long v = strtoull(getenv("LARECOMP_HANG_FINDPTR"), NULL, 16);
+    // (debug) LARECOMP_HANG_FINDPTR=<hex value>[;<hex value>...]: the 8-byte words equal to each within 16 MB of it
+    // (what points to an object: a semaphore's owner); LARECOMP_HANG_MEM=<hex addr>,<hex len>;...: guest memory. Both
+    // in the [hang] dump.
+    for (const char *p = getenv("LARECOMP_HANG_FINDPTR"); p && *p;) {
+        char *after;
+        unsigned long long v = strtoull(p, &after, 16);
+        if (after == p) break;
         uint64_t lo = v > GUEST_LO + 0x1000000 ? (v - 0x1000000) & ~7ull : GUEST_LO, hi = v + 0x1000000 < GUEST_HI ? v + 0x1000000 : GUEST_HI;
         int found = 0;
         for (int i = 0; i < nregions && found < 16; i++) {  // (only mapped regions: a stray touch would commit memory)
@@ -1094,6 +1101,7 @@ void kernel_dump_threads(const char *prefix) {
             for (e = e < hi ? e : hi; a + 8 <= e && found < 16; a += 8)
                 if (*(const uint64_t *)(uintptr_t)a == v) LOG("%s ptr to %llx at %llx\n", prefix, v, (unsigned long long)a), found++;
         }
+        p = *after == ';' ? after + 1 : after;
     }
     if (getenv("LARECOMP_HANG_MEM")) {
         const char *p = getenv("LARECOMP_HANG_MEM");

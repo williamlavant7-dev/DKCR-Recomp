@@ -1,8 +1,25 @@
 // Guest CPU state and helpers used by recompiled code.
 #pragma once
+#include <setjmp.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+
+// C++ exceptions in the game code. libunwind (in the SDK) finds a handler (a landing pad) from the modules' unwind
+// tables, then jumps there with every register restored - into the middle of a function further up the stack, which
+// recompiled code can't do with a branch: its callers' frames are host C frames. So each function with landing pads
+// (tools/analyze.py landing_pads) registers itself on entry: a record on its own host frame, linked into the thread's
+// list (Cpu.eh_top), with a setjmp buffer to come back to. libunwind's jumpto ends in rt_eh_resume
+// (runtime/dispatch.c), which finds the innermost live record whose function holds the landing pad and whose stack is
+// above it, and longjmps there; the function's body then goes to the landing pad's label (tools/gen.py).
+// (the C library's setjmp / longjmp, as the in-place reboot's: __builtin_setjmp's three saved words read the wrapper's
+// locals from a frame Windows x64 code doesn't keep, and the resumed body got garbage for its Cpu)
+typedef struct RtEhFrame {
+    jmp_buf jb;                 // setjmp's buffer
+    struct RtEhFrame *prev;     // the record of the function that called this one (or NULL)
+    uint64_t lo, hi;            // the function's guest address range (its .eh_frame FDE)
+    uint64_t sp;                // the guest sp at its entry: its landing pads run below it
+} RtEhFrame;
 
 typedef struct __attribute__((aligned(16))) Cpu {
     uint64_t x[32];          // x0-x30 (x[31] unused; sp is separate)
@@ -16,7 +33,9 @@ typedef struct __attribute__((aligned(16))) Cpu {
     void *thread;            // 312: runtime thread object
     uint64_t fpcr;           // 320: guest FPCR/FPSR (portable FP/SIMD lowering only; the asm path uses the host's)
     uint64_t fpsr;           // 328
-    uint8_t _pad[512 - 336];
+    RtEhFrame *eh_top;       // 336: the innermost function with landing pads now running (above)
+    uint64_t eh_resume;      // 344: nonzero while a body is being entered at a landing pad (pc: which)
+    uint8_t _pad[512 - 352];
     __uint128_t v[32];       // 512
 } Cpu;
 
@@ -26,8 +45,14 @@ _Static_assert(offsetof(Cpu, nzcv) == 272, "nzcv");
 _Static_assert(offsetof(Cpu, fpcr) == 320, "fpcr");
 _Static_assert(offsetof(Cpu, fpsr) == 328, "fpsr");
 _Static_assert(offsetof(Cpu, v) == 512, "v");
+_Static_assert(offsetof(Cpu, eh_resume) == 344, "eh_resume");
 
 typedef void (*GuestFn)(Cpu *);
+
+// (above) libunwind's jumpto has restored the registers: resume at the landing pad in x30 (never returns)
+__attribute__((noreturn)) void rt_eh_resume(Cpu *c);
+// a body entered for a landing pad it doesn't have (never returns)
+__attribute__((noreturn)) void rt_eh_lost(Cpu *c);
 
 // ---- runtime services (runtime/*.c)
 void rt_dispatch(Cpu *c);                 // call function at c->pc
@@ -94,7 +119,10 @@ void fnprof_hit(uint64_t addr, uint64_t lr, uint64_t x0);
         return !__atomic_compare_exchange_n((T *)(uintptr_t)a, &expected, (T)v, 0,         \
                                             __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);           \
     }                                                                                      \
+    /* (a full fence first: a plain store before it - Unity's graphics worker sets its "waiting" flag with STRB, then  \
+       reads the queue's write position with LDAR - can't pass it either: stronger than ARM asks, never wrong) */      \
     static inline uint64_t lda##N(uint64_t a) {                                            \
+        __atomic_thread_fence(__ATOMIC_SEQ_CST);                                           \
         return __atomic_load_n((T *)(uintptr_t)a, __ATOMIC_SEQ_CST);                       \
     }                                                                                      \
     static inline void stl##N(uint64_t a, uint64_t v) {                                    \

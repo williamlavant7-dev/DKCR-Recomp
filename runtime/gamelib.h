@@ -27,7 +27,7 @@
 #ifndef GAMELIB_ID
 #define GAMELIB_ID "dev"
 #endif
-#define GAMELIB_ABI 2  // (2: DKCR's third module, subsdk0)
+#define GAMELIB_ABI 3  // (2: DKCR's third module, subsdk0; 3: C++ exception records in Cpu)
 #define GAMELIB_FULL_ID_SIZE 96
 
 // The id a library for the game files in game_dir has (<id>-<build ID>, id = GAMELIB_ID, or the iOS build's for an

@@ -132,6 +132,29 @@ void dispatch_init(void) {  // (after gamelib_load)
     for (int t = 0; t < NTABLES; t++) tables[t] = (FnTable){src[t], fns[t], cnt[t], src[t][0], src[t][cnt[t] - 1]};
 }
 
+// C++ exceptions (runtime/cpu.h RtEhFrame): libunwind's jumpto restored the registers for the landing pad (x30) and its
+// frame (sp). The innermost registered function holding the landing pad whose entry sp is above it is the activation
+// to resume: a recursive call of the same function from it entered at that same sp, so the test is strict. The records
+// of the functions it called are dropped with their host frames.
+void rt_eh_resume(Cpu *c) {
+    uint64_t pc = c->x[30], sp = c->sp;
+    for (RtEhFrame *f = c->eh_top; f; f = f->prev)
+        if (pc >= f->lo && pc < f->hi && f->sp > sp) {
+            static int nlog;
+            if (nlog++ < 20) LOG("[eh] resuming at landing pad %llx (sp %llx)\n", (unsigned long long)pc, (unsigned long long)sp);
+            c->eh_top = f;
+            c->pc = pc;
+            c->eh_resume = 1;
+            longjmp(f->jb, 1);
+        }
+    FATAL("C++ exception: no running function holds the landing pad %llx (sp %llx)\n", (unsigned long long)pc,
+          (unsigned long long)sp);
+}
+
+void rt_eh_lost(Cpu *c) {
+    FATAL("C++ exception: resumed into a function without the landing pad %llx\n", (unsigned long long)c->pc);
+}
+
 GuestFn dispatch_lookup(uint64_t addr) {
     for (int t = 0; t < NTABLES; t++) {
         FnTable *ft = &tables[t];

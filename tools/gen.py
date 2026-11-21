@@ -18,7 +18,7 @@ from collections import Counter
 import unicorn as uc
 from unicorn import arm64_const as A
 
-from analyze import eh_frame_functions
+from analyze import eh_frame_functions, landing_pads
 import chunk_bounds
 import lifter
 from lifter import CANON, Insn, Lifter, Unsupported, bits, emit_asm_batch, gaddr, hx, sext
@@ -374,7 +374,12 @@ class Module:
         raise Unsupported(k)
 
     def emit_function(self, entry, end, labels, tables, hle):
-        out = [f'void {fname(entry)}(Cpu *c) {{']
+        # C++ exceptions (runtime/cpu.h RtEhFrame): a function's .eh_frame start registers its range in a wrapper
+        # (eh_reg); every C function holding landing pads (eh_local) is entered at one with c->eh_resume set
+        eh_reg = getattr(self, 'eh_frames', {}).get(entry)
+        eh_local = [p for p in getattr(self, 'eh_pads_in', {}).get(entry, ()) if entry <= p < end]
+        body = f'{fname(entry)}_b' if eh_reg and entry not in hle else fname(entry)
+        out = [f'{"static " if body != fname(entry) else ""}void {body}(Cpu *c) {{']
         if entry in hle:
             out.append(f'    {sanitize(hle[entry])}(c);')
             out.append('}')
@@ -382,6 +387,18 @@ class Module:
         out.append(f'    FN_ENTER({gaddr(entry)});')
         batch = []
         refs = set()
+        if eh_reg or eh_local:
+            labels = set(labels) | set(eh_local)
+            cases = []
+            for p in sorted(set(eh_local) | set(eh_reg[1] if eh_reg else ())):
+                if entry <= p < end:
+                    cases.append(f'case {case_key(p)}: c->eh_resume = 0; goto L_{p:x};')
+                else:  # (the function was split: its C function holding the landing pad goes on)
+                    owner = self.eh_pad_owner[p]
+                    refs.add(owner)
+                    cases.append(f'case {case_key(p)}: __attribute__((musttail)) return {fname(owner)}(c);')
+            out.append(f'    if (__builtin_expect(c->eh_resume != 0, 0)) {{ switch ({switch_on("c->pc")}) {{ '
+                       f'{" ".join(cases)} default: break; }} rt_eh_lost(c); }}')
 
         def flush():
             if batch:
@@ -492,6 +509,11 @@ class Module:
                     continue
                 out.append(f'    c->pc = {ins.target}; __attribute__((musttail)) return rt_dispatch(c);')
             elif k == 'ret':
+                # libunwind's Registers_arm64::jumpto (... ldp x0, x1, [x0]; mov sp, x16; ret): every register restored
+                # for a landing pad up the stack, which a C return can't reach (runtime/cpu.h RtEhFrame)
+                if a - 8 >= entry and self.word(a - 4) == 0x9100021F and self.word(a - 8) == 0xA9400400:
+                    out.append('    rt_eh_resume(c);  /* libunwind jumpto: to the landing pad in x30 */')
+                    self.stats['eh_jumpto'] += 1
                 out.append('    return;')
             last = k
         flush()
@@ -505,6 +527,20 @@ class Module:
         out.append('}')
         if lifter.DYN_BASE and any(GB_USE.search(l) for l in out):
             out.insert(1, '    const uint64_t GB = lasgame_gb;')
+        if body != fname(entry):  # the wrapper: the function's record on its host frame, the body run from it
+            # (c is read from the frame after a longjmp: registers aren't brought back)
+            wrap = [f'void {fname(entry)}(Cpu *c) {{',
+                    '    RtEhFrame eh_;',
+                    '    Cpu *volatile vc_ = c;',
+                    f'    eh_.lo = {gaddr(entry)}; eh_.hi = {gaddr(eh_reg[0])}; eh_.sp = c->sp;',
+                    '    eh_.prev = c->eh_top; c->eh_top = &eh_;',
+                    '    setjmp(eh_.jb);  /* (rt_eh_resume comes back here: the body goes to the landing pad) */',
+                    f'    {body}(vc_);',
+                    '    vc_->eh_top = eh_.prev;',
+                    '}']
+            if lifter.DYN_BASE and any(GB_USE.search(l) for l in wrap):
+                wrap.insert(1, '    const uint64_t GB = lasgame_gb;')
+            out += wrap
         self._refs = refs
         return out
 
@@ -650,6 +686,25 @@ def main():
         entries[a] = (end, labels, tables)
     print(f'{args.name}: {len(starts)} boundaries, {len(entries)} functions, {rounds} rounds, {dict(m.stats)}, '
           f'{time.time() - t0:.0f}s', file=sys.stderr)
+
+    # C++ exceptions (runtime/cpu.h RtEhFrame): the functions with landing pads, and the C function holding each pad
+    all_entries = sorted(entries)
+    m.eh_frames, m.eh_pads_in, m.eh_pad_owner = {}, {}, {}
+    unregistered = 0
+    for s, (e, pads) in landing_pads(m.nso).items():
+        s, e, pads = args.base + s, args.base + e, [args.base + p for p in pads]
+        if s in entries:
+            m.eh_frames[s] = (e, pads)
+        else:
+            unregistered += 1
+        for p in pads:
+            owner = all_entries[bisect.bisect_right(all_entries, p) - 1]
+            m.eh_pad_owner[p] = owner
+            m.eh_pads_in.setdefault(owner, []).append(p)
+    split = sum(1 for s, (e, pads) in m.eh_frames.items() if any(m.eh_pad_owner[p] != s for p in pads))
+    print(f'{args.name}: C++ exceptions: {len(m.eh_frames)} functions with landing pads '
+          f'({sum(len(v[1]) for v in m.eh_frames.values())} pads, {split} split, {unregistered} not a function start)',
+          file=sys.stderr)
 
     os.makedirs(args.outdir, exist_ok=True)
     order = sorted(entries)
