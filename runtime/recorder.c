@@ -237,13 +237,24 @@ static void teardown(void) {
 
 // The video encoder: a GPU's own first (no CPU cost), then Windows' Media Foundation, x264 where FFmpeg has it, and
 // MPEG-4 part 2 (in every FFmpeg) last.
-static const char *const k_encoders[] = {"h264_nvenc", "h264_amf", "h264_qsv", "h264_mf", "libx264", "mpeg4"};
+// Each codec's encoders in the order Auto tries them (Settings > Recording > Encoder: REC_ENC_*; the last is software)
+static const char *const k_encoders[2][REC_ENC_N] = {
+    {NULL, "h264_nvenc", "h264_amf", "h264_qsv", "h264_mf", "libx264", "mpeg4"},
+    {NULL, "hevc_nvenc", "hevc_amf", "hevc_qsv", "hevc_mf", "libx265", "mpeg4"},
+};
 
 static AVCodecContext *open_video(int w, int h, int64_t bitrate, const AVCodec **used) {
     const char *force = getenv("LARECOMP_RECORD_ENCODER");  // (test: that encoder only, e.g. h264_mf as in the release)
-    for (size_t i = 0; i < sizeof k_encoders / sizeof *k_encoders; i++) {
-        if (force && *force && strcmp(force, k_encoders[i])) continue;
-        const AVCodec *c = avcodec_find_encoder_by_name(k_encoders[i]);
+    int codec = g_settings.rec_codec == 1, pick = g_settings.rec_encoder;
+    if (pick < 0 || pick >= REC_ENC_N) pick = REC_ENC_AUTO;
+    // the chosen encoder first, then Auto's order (a choice this PC can't use still records)
+    const char *order[REC_ENC_N + 1];
+    int n = 0;
+    if (pick != REC_ENC_AUTO) order[n++] = k_encoders[codec][pick];
+    for (int i = 1; i < REC_ENC_N; i++) if (i != pick) order[n++] = k_encoders[codec][i];
+    for (int i = 0; i < n; i++) {
+        if (force && *force && strcmp(force, order[i])) continue;
+        const AVCodec *c = avcodec_find_encoder_by_name(order[i]);
         if (!c) continue;
         AVCodecContext *ctx = avcodec_alloc_context3(c);
         ctx->width = w, ctx->height = h;
@@ -265,8 +276,8 @@ static AVCodecContext *open_video(int w, int h, int64_t bitrate, const AVCodec *
             if (!yuv) ctx->pix_fmt = fmts[0];
         }
         if (oc->oformat->flags & AVFMT_GLOBALHEADER) ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-        if (!strcmp(c->name, "h264_nvenc")) av_opt_set(ctx->priv_data, "preset", "p4", 0);
-        if (!strcmp(c->name, "libx264")) av_opt_set(ctx->priv_data, "preset", "veryfast", 0);
+        if (strstr(c->name, "_nvenc")) av_opt_set(ctx->priv_data, "preset", "p4", 0);
+        if (!strcmp(c->name, "libx264") || !strcmp(c->name, "libx265")) av_opt_set(ctx->priv_data, "preset", "veryfast", 0);
         if (avcodec_open2(ctx, c, NULL) == 0) { *used = c; return ctx; }
         LOG("[rec] encoder %s not usable here\n", c->name);
         avcodec_free_context(&ctx);
@@ -274,24 +285,33 @@ static AVCodecContext *open_video(int w, int h, int64_t bitrate, const AVCodec *
     return NULL;
 }
 
+const char *recorder_dir(void) { return g_settings.rec_dir[0] ? g_settings.rec_dir : "recordings"; }
+
 static bool setup(void) {
-    SDL_CreateDirectory("recordings");
-    char path[512], when[64];
+    const char *dir = recorder_dir();
+    SDL_CreateDirectory(dir);
+    bool mkv = g_settings.rec_container == 1;
+    char path[1200], when[64];
     time_t now = time(NULL);
     strftime(when, sizeof when, "%Y-%m-%d %H-%M-%S", localtime(&now));
-    snprintf(path, sizeof path, "recordings/DKCR Recomp %s.mp4", when);
+    snprintf(path, sizeof path, "%s/DKCR Recomp %s.%s", dir, when, mkv ? "mkv" : "mp4");
     fps = g_settings.rec_fps == 1 ? 30 : 60;
-    // the window's size (an even one: 4:2:0), from the frame the renderer hands over next - the window size now
+    // the window's size, or Output size's height (the window's shape); even sizes (4:2:0)
     int w = 0, h = 0;
     extern void renderer_window_size(int *w, int *h);
     renderer_window_size(&w, &h);
-    w &= ~1, h &= ~1;
     if (w < 16 || h < 16) w = 1280, h = 720;
-    static const double mbps_1080p60[3] = {8, 16, 32};  // Low, Medium, High
-    int q = g_settings.rec_quality < 0 || g_settings.rec_quality > 2 ? 1 : g_settings.rec_quality;
-    int64_t bitrate = (int64_t)(mbps_1080p60[q] * 1e6 * ((double)w * h / (1920.0 * 1080.0)) * (fps / 60.0));
+    static const int out_h[] = {0, 2160, 1440, 1080, 720};  // (REC_SIZE_*: 0 the window's)
+    int sz = g_settings.rec_size >= 0 && g_settings.rec_size < 5 ? g_settings.rec_size : 0;
+    if (out_h[sz]) w = (int)lround((double)w * out_h[sz] / h), h = out_h[sz];
+    w &= ~1, h &= ~1;
+    // Bitrate: Auto is 16 Mbit/s at 1080p60, scaled to the size and frame rate; else the chosen one
+    static const int mbps[] = {0, 4, 8, 12, 16, 24, 32, 50, 80};
+    int bi = g_settings.rec_bitrate >= 0 && g_settings.rec_bitrate < 9 ? g_settings.rec_bitrate : 0;
+    int64_t bitrate = mbps[bi] ? (int64_t)mbps[bi] * 1000000
+                               : (int64_t)(16e6 * ((double)w * h / (1920.0 * 1080.0)) * (fps / 60.0));
     if (bitrate < 2000000) bitrate = 2000000;
-    bool ok = avformat_alloc_output_context2(&oc, NULL, "mp4", path) >= 0 && oc;
+    bool ok = avformat_alloc_output_context2(&oc, NULL, mkv ? "matroska" : "mp4", path) >= 0 && oc;
     const AVCodec *vc = NULL;
     if (ok) ok = (vctx = open_video(w, h, bitrate, &vc)) != NULL;
     if (ok) {
@@ -306,7 +326,8 @@ static bool setup(void) {
             actx->sample_rate = AUDIO_RATE;
             actx->sample_fmt = AV_SAMPLE_FMT_FLTP;
             av_channel_layout_default(&actx->ch_layout, 2);
-            actx->bit_rate = 192000;
+            static const int kbps[] = {128, 192, 256, 320};
+            actx->bit_rate = 1000 * kbps[g_settings.rec_audio_kbps >= 0 && g_settings.rec_audio_kbps < 4 ? g_settings.rec_audio_kbps : 1];
             actx->time_base = (AVRational){1, AUDIO_RATE};
             if (oc->oformat->flags & AVFMT_GLOBALHEADER) actx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
             if (avcodec_open2(actx, ac, NULL) < 0 || actx->frame_size <= 0 || actx->frame_size > 1024) {
@@ -341,7 +362,7 @@ static bool setup(void) {
         remove(path);
         return false;
     }
-    snprintf(g_last_file, sizeof g_last_file, "%s", path + strlen("recordings/"));
+    snprintf(g_last_file, sizeof g_last_file, "%s", path + strlen(dir) + 1);
     snprintf(g_encoder_name, sizeof g_encoder_name, "%s", vc->name);
     LOG("[rec] recording to %s: %dx%d at %d fps, %s, %.0f Mbit/s%s\n", path, w, h, fps, vc->name, bitrate / 1e6,
         actx ? ", with sound" : "");

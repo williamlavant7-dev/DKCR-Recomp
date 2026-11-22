@@ -56,6 +56,7 @@ Settings g_settings = {
     .reverb = true,
     .movie_audio = true,
     .rec_quality = 1,
+    .rec_audio_kbps = 1,
     .rec_audio = true,
     .rec_dot = true,
     .rumble = true,
@@ -226,6 +227,29 @@ void settings_load(void) {
         else if (!strcmp(key, "record_fps")) g_settings.rec_fps = atoi(val) == 30;
         else if (!strcmp(key, "record_sound")) g_settings.rec_audio = atoi(val) != 0;
         else if (!strcmp(key, "record_dot")) g_settings.rec_dot = atoi(val) != 0;
+        else if (!strcmp(key, "record_folder")) snprintf(g_settings.rec_dir, sizeof g_settings.rec_dir, "%s", val);
+        else if (!strcmp(key, "record_codec")) g_settings.rec_codec = !strcmp(val, "hevc");
+        else if (!strcmp(key, "record_encoder")) {
+            static const char *const e[] = {"auto", "nvenc", "amf", "qsv", "mediafoundation", "software", "mpeg4"};
+            g_settings.rec_encoder = 0;
+            for (int i = 0; i < 7; i++) if (!strcmp(val, e[i])) g_settings.rec_encoder = i;
+        }
+        else if (!strcmp(key, "record_bitrate")) {
+            static const int m[] = {0, 4, 8, 12, 16, 24, 32, 50, 80};
+            g_settings.rec_bitrate = 0;
+            for (int i = 1; i < 9; i++) if (atoi(val) == m[i]) g_settings.rec_bitrate = i;
+        }
+        else if (!strcmp(key, "record_size")) {
+            static const int hh[] = {0, 2160, 1440, 1080, 720};
+            g_settings.rec_size = 0;
+            for (int i = 1; i < 5; i++) if (atoi(val) == hh[i]) g_settings.rec_size = i;
+        }
+        else if (!strcmp(key, "record_format")) g_settings.rec_container = !strcmp(val, "mkv");
+        else if (!strcmp(key, "record_audio_bitrate")) {
+            static const int k[] = {128, 192, 256, 320};
+            g_settings.rec_audio_kbps = 1;
+            for (int i = 0; i < 4; i++) if (atoi(val) == k[i]) g_settings.rec_audio_kbps = i;
+        }
         else if (!strcmp(key, "show_fps")) {  // (older files: 0 / 1, and 1 was the top right)
             static const char *const corners[] = {"off", "top_left", "top_right", "bottom_left", "bottom_right"};
             g_settings.show_fps = atoi(val) ? FPS_TOP_RIGHT : FPS_OFF;
@@ -350,6 +374,21 @@ void settings_save(void) {
     fprintf(f, "record_fps = %d\n", g_settings.rec_fps == 1 ? 30 : 60);
     fprintf(f, "record_sound = %d\n", g_settings.rec_audio);
     fprintf(f, "record_dot = %d\n", g_settings.rec_dot);
+    {
+        static const char *const e[] = {"auto", "nvenc", "amf", "qsv", "mediafoundation", "software", "mpeg4"};
+        static const int m[] = {0, 4, 8, 12, 16, 24, 32, 50, 80}, hh[] = {0, 2160, 1440, 1080, 720}, k[] = {128, 192, 256, 320};
+        int ei = g_settings.rec_encoder >= 0 && g_settings.rec_encoder < 7 ? g_settings.rec_encoder : 0;
+        int bi = g_settings.rec_bitrate >= 0 && g_settings.rec_bitrate < 9 ? g_settings.rec_bitrate : 0;
+        int si = g_settings.rec_size >= 0 && g_settings.rec_size < 5 ? g_settings.rec_size : 0;
+        int ki = g_settings.rec_audio_kbps >= 0 && g_settings.rec_audio_kbps < 4 ? g_settings.rec_audio_kbps : 1;
+        fprintf(f, "record_folder = %s\n", g_settings.rec_dir);
+        fprintf(f, "record_codec = %s\n", g_settings.rec_codec == 1 ? "hevc" : "h264");
+        fprintf(f, "record_encoder = %s\n", e[ei]);
+        if (bi) fprintf(f, "record_bitrate = %d\n", m[bi]); else fprintf(f, "record_bitrate = auto\n");
+        if (si) fprintf(f, "record_size = %d\n", hh[si]); else fprintf(f, "record_size = window\n");
+        fprintf(f, "record_format = %s\n", g_settings.rec_container == 1 ? "mkv" : "mp4");
+        fprintf(f, "record_audio_bitrate = %d\n", k[ki]);
+    }
     {
         static const char *const corners[] = {"off", "top_left", "top_right", "bottom_left", "bottom_right"};
         int c = g_settings.show_fps;

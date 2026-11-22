@@ -16,6 +16,10 @@ void recorder_toggle(void);
 bool recorder_active(void);
 const char *recorder_last_file(void);  // the latest recording's file name ("" before any)
 const char *recorder_encoder(void);    // the video encoder in use or last used ("" before any)
+const char *recorder_dir(void);        // where videos go: Settings > Recording > Save folder, or recordings/
+
+// Settings > Recording > Encoder (settings.h rec_encoder): Auto tries the GPU's first, then the rest in this order
+enum { REC_ENC_AUTO = 0, REC_ENC_NVENC, REC_ENC_AMF, REC_ENC_QSV, REC_ENC_MF, REC_ENC_X26X, REC_ENC_MPEG4, REC_ENC_N };
 
 // The renderer: is a frame wanted now (recording, a slot free)? Then the window image, top row first, 4 bytes a
 // pixel (bgr: B, G, R, A order; else R, G, B, A), taken at t_ns (plat_now_ns).

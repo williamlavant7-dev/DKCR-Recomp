@@ -49,8 +49,15 @@ typedef struct {
     int audio_out;       // AUDIO_OUT_*: speaker layout of the game's sound (runtime/services/audio.c)
     bool reverb;         // room reverb effect
     bool movie_audio;
-    int rec_quality;     // video recording (runtime/recorder.c): 0 Low, 1 Medium, 2 High
-    int rec_fps;         // 0: 60 fps, 1: 30 fps
+    int rec_quality;     // (no longer used: Bitrate's Auto replaced the Low / Medium / High of the first version)
+    int rec_fps;         // video recording (runtime/recorder.c): 0: 60 fps, 1: 30 fps
+    char rec_dir[1024];  // where videos go ("": the data folder's recordings/)
+    int rec_codec;       // 0 H.264, 1 H.265 / HEVC
+    int rec_encoder;     // REC_ENC_* (recorder.h): 0 Auto
+    int rec_bitrate;     // 0 Auto, 1.. 4 / 8 / 12 / 16 / 24 / 32 / 50 / 80 Mbit/s
+    int rec_size;        // output height: 0 the window's, 1 2160, 2 1440, 3 1080, 4 720
+    int rec_container;   // 0 MP4, 1 MKV
+    int rec_audio_kbps;  // 0 128, 1 192, 2 256, 3 320 kbit/s
     bool rec_audio;      // the game's sound in the recording
     bool rec_dot;        // the red REC dot in a corner while recording (never in the video)
     bool frame_interp;   // Frame Generation: extra images between the game's frames (runtime/nvn/interp.c)
