@@ -865,8 +865,35 @@ static void emit_texs(Ctx *c, uint64_t w, bool fetch) {
 
 // TEX.B (bindless) takes its texture | sampler handle from a register (gpr20; its parameters follow it). Find where
 // the shader loaded it, so the renderer can read the handle from the same place at draw time: LDC or MOV from a
-// constant buffer, maybe ORed with a second word of the same buffer. DKCR's Unity: MOV r, c2[texture] then
-// LOP.OR r, r, c2[sampler] - NVN's separate texture and sampler handles (exec's shader_texture_handle).
+// constant buffer, maybe ORed with a second word of the same buffer (from it directly, or from another register). DKCR's
+// Unity: MOV r, c2[texture] then LOP.OR r, r, c2[sampler] - NVN's separate texture and sampler handles (exec's
+// shader_texture_handle).
+// One word of a handle: the constant buffer load that register reg holds before instruction i (through copies).
+static bool bindless_word(const uint64_t *code, int i, int reg, int *cb, uint32_t *off) {
+    for (; i >= 0; i--) {
+        if (i % 4 == 0) continue;  // (scheduling words)
+        uint64_t x = code[i];
+        if ((int)bits(x, 0, 8) != reg) continue;
+        uint64_t t13 = x & 0xfff8000000000000ull;
+        if (t13 == 0x5c98000000000000ull && bits(x, 39, 4) == 0xf) { reg = (int)bits(x, 20, 8); continue; }  // MOV
+        if (t13 == 0x5c10000000000000ull && bits(x, 8, 8) == RZ && !bits(x, 48, 2) && !bits(x, 47, 1)) {
+            reg = (int)bits(x, 20, 8);  // IADD r, RZ, b
+            continue;
+        }
+        if (t13 == 0xef90000000000000ull && bits(x, 8, 8) == RZ && bits(x, 44, 2) == 0) {  // LDC, constant address
+            *cb = (int)bits(x, 36, 5); *off = (uint32_t)sbits(x, 20, 16);
+            return true;
+        }
+        if (t13 == 0x4c98000000000000ull) {  // MOV from a constant buffer
+            *cb = (int)bits(x, 34, 5); *off = (uint32_t)bits(x, 20, 14) * 4;
+            return true;
+        }
+        if ((x >> 60) == 0xe) continue;  // (stores, flow control)
+        return false;
+    }
+    return false;
+}
+
 static bool bindless_source(Ctx *c, int reg, int *cb, uint32_t *off, uint32_t *off2, uint64_t *seen) {
     const uint64_t *code = (const uint64_t *)c->code;
     *seen = 0;
@@ -880,6 +907,12 @@ static bool bindless_source(Ctx *c, int reg, int *cb, uint32_t *off, uint32_t *o
         if (t13 == 0x4c40000000000000ull && bits(x, 41, 2) == 1 && !*off2 && !bits(x, 39, 2) && !bits(x, 44, 4)) {
             // LOP.OR r, a, c[b][o] (no inversion, no predicate output): the rest comes from a
             cb2 = (int)bits(x, 34, 5); *off2 = (uint32_t)bits(x, 20, 14) * 4;
+            reg = (int)bits(x, 8, 8);
+            continue;
+        }
+        if (t13 == 0x5c40000000000000ull && bits(x, 41, 2) == 1 && !*off2 && !bits(x, 39, 2) && !bits(x, 44, 4) &&
+            bindless_word(code, i - 1, (int)bits(x, 20, 8), &cb2, off2)) {
+            // LOP.OR r, a, b with both words in registers (DKCR's HUD text: the sampler word loaded into b first)
             reg = (int)bits(x, 8, 8);
             continue;
         }
