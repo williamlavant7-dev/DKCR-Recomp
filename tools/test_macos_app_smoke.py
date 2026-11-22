@@ -20,7 +20,7 @@ class SmokeTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.app = self.root / 'Fixture App.app'
-        self.exe = self.app / 'Contents/MacOS/lasrecomp'
+        self.exe = self.app / 'Contents/MacOS/dkcrrecomp'
         self.lib = self.app / 'Contents/Frameworks/libanswer.dylib'
         self.exe.parent.mkdir(parents=True)
         self.lib.parent.mkdir()
@@ -81,7 +81,7 @@ class SmokeTests(unittest.TestCase):
             self.assertEqual(env['LARECOMP_FORCE_LAUNCHER'], '1')
             self.assertEqual(env['HOME'], kwargs['cwd'])
             self.assertEqual(env['LARECOMP_DATA_ROOT'], kwargs['cwd'])
-            (Path(kwargs['cwd']) / 'lasrecomp.log').write_text(smoke.GUARD)
+            (Path(kwargs['cwd']) / 'dkcrrecomp.log').write_text(smoke.GUARD)
             return subprocess.CompletedProcess(args[0], 3, '')
         with patch.dict(os.environ, DYLD_LIBRARY_PATH='/bad', LARECOMP_INPUT='bad', LASRECOMP_INFO_LOGGED='1'):
             with patch.object(smoke.subprocess, 'run', side_effect=run):

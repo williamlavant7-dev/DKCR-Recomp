@@ -208,7 +208,7 @@ static inline bool plat_touch_tablet(void) { return false; }
 // ---- iOS only (runtime/platform/ios.c, ios_bookmark.m; SDL's dialogs: platform/ios_sdl.h; within the iOS layer:
 // platform/ios_internal.h)
 #if PLAT_IOS
-const char *plat_ios_documents(void);     // the app's Documents folder (Files > On My iPhone > LAS Recomp): the default data root
+const char *plat_ios_documents(void);     // the app's Documents folder (Files > On My iPhone > DKCR Recomp): the default data root
 // The signature has / lacks (1 / 0) com.apple.developer.kernel.increased-memory-limit; -1 unreadable. Without it iOS
 // ends the app at a much lower footprint. LARECOMP_TEST_NO_MEMORY_ENTITLEMENT=1 (test): 0.
 int plat_ios_memory_entitled(void);

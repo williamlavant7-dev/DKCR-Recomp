@@ -1,5 +1,5 @@
 #!/bin/bash
-# make app: build/LAS Recomp.app from <exe> (default build/mac15/lasrecomp). Contents/MacOS: the executable;
+# make app: build/LAS Recomp.app from <exe> (default build/mac15/dkcrrecomp). Contents/MacOS: the executable;
 # Contents/Frameworks: every non-system dylib it loads (SDL3, FFmpeg; from build/deps, else Homebrew), load
 # paths rewritten to @rpath; Contents/Resources: the icon, the seed generator helper (build/helper/rando-gen, when
 # built: runtime/ui/rando_tab.mm generator_cmd) and what the start screen builds the game code with on the player's
@@ -10,7 +10,7 @@
 # lists them); without it the newest minimum found inside is used.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-EXE=${1:-build/mac15/lasrecomp}
+EXE=${1:-build/mac15/dkcrrecomp}
 APP="build/LAS Recomp.app"
 DEPS=$PWD/build/deps
 BUNDLE_ID=$(sed -n 's/^#define RT_BUNDLE_ID "\(.*\)"/\1/p' runtime/paths.h)
@@ -35,8 +35,8 @@ if nm "$EXE" | grep ' _f_70' >/dev/null; then echo "$EXE has game code linked in
 rm -rf "$APP"
 C="$APP/Contents"
 mkdir -p "$C/MacOS" "$C/Frameworks" "$C/Resources"
-cp "$EXE" "$C/MacOS/lasrecomp"
-strip -S "$C/MacOS/lasrecomp"  # (debug-map entries only: the symbols crash reports name functions by stay)
+cp "$EXE" "$C/MacOS/dkcrrecomp"
+strip -S "$C/MacOS/dkcrrecomp"  # (debug-map entries only: the symbols crash reports name functions by stay)
 if [ -x "$HELPER/rando-gen" ]; then cp -R "$HELPER" "$C/Resources/rando-gen"; else echo "note: no $HELPER (make rando-helper)"; fi
 cp -R "$GEN_HELPER" "$C/Resources/lasgen"
 cp -R "$ZIG" "$C/Resources/zig"
@@ -63,7 +63,7 @@ find_dep() {  # dep as referenced by (the original of) $2 -> a real file
 }
 deps_of() { otool -L "$1" | tail -n +2 | awk '{print $1}' | grep -v "^$(otool -D "$1" | tail -n +2 | head -1)\$" || true; }
 origin() { local s; s="$(dirname "$1")/.$(basename "$1").src"; if [ -f "$s" ]; then cat "$s"; else echo "$1"; fi; }
-queue="$C/MacOS/lasrecomp"
+queue="$C/MacOS/dkcrrecomp"
 copied=" "
 while [ -n "$queue" ]; do
     f=${queue%%|*}; [ "$queue" = "$f" ] && queue= || queue=${queue#*|}
@@ -84,8 +84,8 @@ while [ -n "$queue" ]; do
 done
 rm -f "$C/Frameworks"/.*.src
 rpaths() { otool -l "$1" | awk '/LC_RPATH/ {getline; getline; print $2}'; }
-for r in $(rpaths "$C/MacOS/lasrecomp"); do install_name_tool -delete_rpath "$r" "$C/MacOS/lasrecomp"; done
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$C/MacOS/lasrecomp"
+for r in $(rpaths "$C/MacOS/dkcrrecomp"); do install_name_tool -delete_rpath "$r" "$C/MacOS/dkcrrecomp"; done
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$C/MacOS/dkcrrecomp"
 for f in "$C/Frameworks"/*.dylib; do  # (their own build rpaths, if any: point them at the bundle instead)
     for r in $(rpaths "$f"); do install_name_tool -delete_rpath "$r" "$f"; done
     install_name_tool -add_rpath "@loader_path" "$f" 2>/dev/null || true
@@ -114,7 +114,7 @@ cat > "$C/Info.plist" <<EOF
 <plist version="1.0">
 <dict>
     <key>CFBundleDevelopmentRegion</key><string>en</string>
-    <key>CFBundleExecutable</key><string>lasrecomp</string>
+    <key>CFBundleExecutable</key><string>dkcrrecomp</string>
     <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
     <key>CFBundleName</key><string>LAS Recomp</string>
     <key>CFBundleDisplayName</key><string>LAS Recomp</string>
@@ -134,10 +134,10 @@ printf 'APPL????' > "$C/PkgInfo"
 
 # ---- ad-hoc signature (Apple Silicon refuses to run unsigned code; the rewrites above invalidated the originals):
 # every Mach-O inside first, then the bundle
-while read -r f; do [ "$f" = "$C/MacOS/lasrecomp" ] || codesign -f -s - "$f" 2>/dev/null; done < <(machos)
+while read -r f; do [ "$f" = "$C/MacOS/dkcrrecomp" ] || codesign -f -s - "$f" 2>/dev/null; done < <(machos)
 codesign -f -s - "$APP"
 codesign --verify --strict "$APP"
-if find "$APP" -name 'lasgame*' | grep . >/dev/null; then echo "game code inside $APP"; exit 1; fi
+if find "$APP" -name 'dkcrgame*' | grep . >/dev/null; then echo "game code inside $APP"; exit 1; fi
 # no path of this machine inside (configure lines, debug paths, frozen Python's file names). Not on CI: its paths
 # name no one, and prebuilt wheels hold the CI runner's own (/Users/runner/...)
 if [ "${CI:-}" != true ]; then

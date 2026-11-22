@@ -40,7 +40,7 @@ cp $Z/lib/std/std.zig $O/lib/std/
 
 # 2. the runtime: a probe DLL importing from the exe, linked the way the full zig does it (-v: its lld-link line);
 #    -s: the runtime is built without debug info (it would name this machine's folders)
-printf 'LIBRARY lasrecomp.exe\nEXPORTS\nprobe_host\n' > $W/host.def
+printf 'LIBRARY dkcrrecomp.exe\nEXPORTS\nprobe_host\n' > $W/host.def
 printf 'void probe_host(void);\n__declspec(dllexport) void probe(void) { probe_host(); }\n' > $W/dll.c
 ZA=$PWD/$Z/zig.exe
 case "${MSYSTEM_CARCH:-x86_64}" in aarch64) MACHINE=arm64;; *) MACHINE=i386:x86-64;; esac

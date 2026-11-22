@@ -13,8 +13,8 @@ case $ARCH in x86_64) PODARCH=amd64 ;; aarch64) PODARCH=arm64 ;;
     *) echo "unknown arch $ARCH"; exit 1 ;; esac
 
 image() {  # arch -> tag (built once, then cached by podman)
-    podman build -q --arch "$1" -t "localhost/lasrecomp-build:$1" -f tools/linux/Containerfile tools/linux >/dev/null || return
-    echo "localhost/lasrecomp-build:$1"
+    podman build -q --arch "$1" -t "localhost/dkcrrecomp-build:$1" -f tools/linux/Containerfile tools/linux >/dev/null || return
+    echo "localhost/dkcrrecomp-build:$1"
 }
 run() {  # image, command...: the checkout mounted at /src
     local img=$1; shift

@@ -1,6 +1,6 @@
 // Start screen, shown before the game boots (user 2026-10-08, styled after Dusklight's launcher): PLAY (the vanilla
 // game), SETTINGS, QUIT, game-files status at the lower left.
-// Nothing of the game ships with LAS Recomp: on first launch the user picks the folder with their own game files (1.0.0, 1.0.1 or 1.1.0), we check
+// Nothing of the game ships with DKCR Recomp: on first launch the user picks the folder with their own game files (1.0.0, 1.0.1 or 1.1.0), we check
 // the main module's build id (runtime/game_addresses/versions.h), copy the files and build the game's data image; PLAY stays disabled until that worked. The background is a frame of the game's own title movie (from the user's files) once extracted.
 //
 // Skipped with --play, LARECOMP_NO_LAUNCHER=1, or any scripted test run (LARECOMP_INPUT): tests boot straight in
@@ -335,8 +335,8 @@ static std::string refused_main(const std::string &exefs) {
     return k == GAME_MAIN_NSO ? std::string(hex, 16) : std::string();
 }
 // (with the build ID's first 16 hex digits; without one, the line alone)
-static const char *const VERSION_HINT = LN("LAS Recomp needs version 1.0.0, 1.0.1 or 1.1.0 of the game.");
-static const char *const VERSION_ID_HINT = LN("LAS Recomp needs version 1.0.0, 1.0.1 or 1.1.0 of the game. These game "
+static const char *const VERSION_HINT = LN("DKCR Recomp needs version 1.0.0, 1.0.1 or 1.1.0 of the game.");
+static const char *const VERSION_ID_HINT = LN("DKCR Recomp needs version 1.0.0, 1.0.1 or 1.1.0 of the game. These game "
                                               "files have build ID %s.");
 // (English, as the setup lines: shown() puts it in the menus' language)
 static std::string version_hint(const std::string &exefs) {
@@ -475,7 +475,7 @@ static void set_failure(int k, int have = -1, const char *reason = NULL) {
     static const char *const hint[] = {
         "",
         PICK_FOLDER_HINT,
-        LN("LAS Recomp needs the extracted exefs and romfs folders, not .xci, .nsp or .nca files."),
+        LN("DKCR Recomp needs the extracted exefs and romfs folders, not .xci, .nsp or .nca files."),
         LN("Make sure there's about 12 GB free and try again."),
         VERSION_HINT,
         LN("Some of the game's files are missing, usually from a copy or unzip that stopped partway. Copy them again "
@@ -646,7 +646,7 @@ static void *extract_thread(void *) {
         goto done;
     }
     {
-        // (the picked folder can't be LAS Recomp's own copy: setting up again deletes that first)
+        // (the picked folder can't be DKCR Recomp's own copy: setting up again deletes that first)
         char a[4096], b[4096];
         mkdir(g_root.c_str(), 0755);
         if (realpath(exefs.c_str(), a) && realpath(g_root.c_str(), b) && !strncmp(a, b, strlen(b)) &&
@@ -705,7 +705,7 @@ static std::string picker_hint(const char *what) {
     fprintf(stderr, "[launcher] %s window: %s\n", what, err.c_str());
 #if defined(__linux__) && !defined(__ANDROID__)
     char b[256];  // (what: "folder" / "file")
-    snprintf(b, sizeof b, LN("LAS Recomp needs xdg-desktop-portal or zenity to open the %s window. Install one and try "
+    snprintf(b, sizeof b, LN("DKCR Recomp needs xdg-desktop-portal or zenity to open the %s window. Install one and try "
                              "again."), what);
     return b;
 #else
@@ -995,7 +995,7 @@ extern "C" void launcher_play_seed(const char *seed) {
 }
 static float g_menu_gap = 0.35f;  // space under each item, in line heights
 
-// The first PLAY ever (settings.menu_tip_seen): a note on opening the LAS Recomp menu in game (it isn't obvious),
+// The first PLAY ever (settings.menu_tip_seen): a note on opening the DKCR Recomp menu in game (it isn't obvious),
 // OK starts the game. Returns true once OK is pressed.
 static bool g_tip_test;  // (LARECOMP_LAUNCHER_SHOT=<frame>:tip)
 // Something the player should know before playing (iPhone: the data folder offloaded to iCloud), in the menus' look
@@ -1075,7 +1075,7 @@ static bool menu_tip(float s) {
         static const char *const home[] = {LN("Home button"), LN("Xbox button"), LN("PlayStation button")};  // (bind_label_family)
         static const char *const pad[] = {LN("Minus + Plus"), LN("View + Menu"), LN("Create + Options")};
         ImGui::PushTextWrapPos(0);
-        ImGui::TextUnformatted(L("LAS Recomp has its own menu for settings and more."));
+        ImGui::TextUnformatted(L("DKCR Recomp has its own menu for settings and more."));
         ImGui::Spacing();
         int fam = bind_label_family() % 3;
         ImGui::Text(L("Open it in game with F1 or Esc, or press the %s or %s together on a controller."), L(home[fam]),
@@ -1803,14 +1803,14 @@ static void df_restart(void) {
     g_df = DF_RESTART;  // (no exec on iOS: the app ends on OK, the player opens it again)
 #else
     rt_paths_restart();
-    snprintf(g_df_err, sizeof g_df_err, "%s", LN("Couldn't restart LAS Recomp. Start it again to use the new folder."));
+    snprintf(g_df_err, sizeof g_df_err, "%s", LN("Couldn't restart DKCR Recomp. Start it again to use the new folder."));
     g_df = DF_FAILED;
 #endif
 }
 
 #ifdef __ANDROID__
 // Android: the folder is on the SD card - the app's folder there (LARECOMP_ANDROID_SD_DIR) or one inside it (a
-// "LAS Recomp" folder a move made there when the card's folder had other files)
+// "DKCR Recomp" folder a move made there when the card's folder had other files)
 static bool android_on_sd(const char *p) {
     const char *sd = getenv("LARECOMP_ANDROID_SD_DIR");
     char a[PATH_MAX], b[PATH_MAX];
@@ -1874,7 +1874,7 @@ static void data_folder_popup(float s) {
             ImGui::Spacing();
             close = ImGui::Button(L("OK"), bw) || esc;
         } else if (t.has_data) {
-            ImGui::TextUnformatted(L("This folder already has LAS Recomp data. Use it?"));
+            ImGui::TextUnformatted(L("This folder already has DKCR Recomp data. Use it?"));
             ImGui::Spacing();
             if (ImGui::Button(L("Use it"), bw) || g_df_auto_fresh) g_df_auto_fresh = false, use_it();
             ImGui::SameLine();
@@ -1923,7 +1923,7 @@ static void data_folder_popup(float s) {
         else if (r == -1) g_df = DF_FAILED;
         if (r != 0) g_df_cancelling = false;
     } else if (g_df == DF_RESTART) {
-        ImGui::TextUnformatted(L("LAS Recomp needs to restart to use the new folder. It closes now; open it again."));
+        ImGui::TextUnformatted(L("DKCR Recomp needs to restart to use the new folder. It closes now; open it again."));
         ImGui::Spacing();
         if (ImGui::Button(L("OK"), bw)) { fflush(stderr); exit(0); }
     } else {
@@ -1943,7 +1943,7 @@ static void data_folder_popup(float s) {
 // picked goes through the same question as on the desktop (move the data there, or start fresh).
 static void storage_rows(bool busy) {
     const char *fixed = rt_data_root_fixed() ? L(rt_data_root_fixed()) : NULL;
-    std::string d = std::string(L("Where LAS Recomp keeps game files, saves and settings.")) + "\n\n" +
+    std::string d = std::string(L("Where DKCR Recomp keeps game files, saves and settings.")) + "\n\n" +
                     data_root_shown() + (fixed ? std::string("\n\n") + fixed : "");
     opt_section("Storage");
 #ifdef __ANDROID__
@@ -2010,7 +2010,7 @@ static void driver_rows(void) {
     if (opt_action("Vulkan driver", used.empty() ? LN("Phone's own") : used.c_str(), d.c_str(), true))
         android_call("pickDriver");
     if (!want.empty() && opt_action("Use the phone's own driver", "", "Goes back to the phone's own Vulkan driver. "
-                                    "LAS Recomp restarts to use it.", true))
+                                    "DKCR Recomp restarts to use it.", true))
         android_call("useSystemDriver");
 }
 #endif
@@ -2037,12 +2037,12 @@ static void prelaunch_tab(float sc) {
 #else
     const char *show = LN("Show in Finder");
 #endif
-    if (opt_action(show, "", "Opens the folder with LAS Recomp's copy of the game files.")) reveal_folder(g_root);
+    if (opt_action(show, "", "Opens the folder with DKCR Recomp's copy of the game files.")) reveal_folder(g_root);
 #endif
     static bool shot_del = getenv("LARECOMP_LAUNCHER_SHOT") && strstr(getenv("LARECOMP_LAUNCHER_SHOT"), ":askdelete");
     if (shot_del) confirm_delete = true, shot_del = false;  // (test: :askdelete)
     if (!confirm_delete) {
-        if (opt_action("Delete game files", gbs, "Frees up the space LAS Recomp's copy of the game files uses. Your saves, "
+        if (opt_action("Delete game files", gbs, "Frees up the space DKCR Recomp's copy of the game files uses. Your saves, "
                        "settings stay.", true))
             confirm_delete = true;
     } else {
@@ -2059,7 +2059,7 @@ static void prelaunch_tab(float sc) {
             stop_background_prep();
             bool ok = rt_remove_game_files(g_root.c_str());  // (runtime/paths.c: only what the extraction made)
             game_files_changed();
-            set_job(ok ? LN("Game files deleted.") : LN("Couldn't delete the game files. They aren't in LAS Recomp's data folder."),
+            set_job(ok ? LN("Game files deleted.") : LN("Couldn't delete the game files. They aren't in DKCR Recomp's data folder."),
                     !ok);
             g_files_deleted = true, gb = -1, confirm_delete = false;
         }
@@ -2112,7 +2112,7 @@ static void load_fonts(void) {
     const char *fonts[] = {getenv("LARECOMP_LAUNCHER_FONT") ? getenv("LARECOMP_LAUNCHER_FONT") : "",  // (test)
                            own.c_str(), "fonts/nintendo_udsgr_std_003.ttf", "/System/Library/Fonts/Avenir Next.ttc",
                            "/System/Library/Fonts/Helvetica.ttc", "C:/Windows/Fonts/segoeui.ttf"};
-    // the menus' language's glyphs (i18n.h), and its script's font merged in; the title only says "LAS Recompiled"
+    // the menus' language's glyphs (i18n.h), and its script's font merged in; the title only says "DKCR Recompiled"
     static const ImWchar title_ranges[] = {0x20, 0x7E, 0};
     for (const char *p : fonts) {
         if (g_font_menu || !*p || !file_exists(p)) continue;
@@ -2221,7 +2221,7 @@ extern "C" void launcher_run(const char *root) {
         if (pg && !strcmp(pg + 1, "tip")) g_settings.menu_tip_seen = false, g_tip_test = true;
         if (pg && !strcmp(pg + 1, "recompiling")) page = SETUP, g_build_frac = 0.42f, set_job(LN("Recompiling the game"));
         if (pg && !strcmp(pg + 1, "notice"))  // (the iPhone's iCloud notice, anywhere)
-            g_notice = std::string(L("Some of LAS Recomp's files aren't on this iPhone. They download as the game reads "
+            g_notice = std::string(L("Some of DKCR Recomp's files aren't on this iPhone. They download as the game reads "
                                      "them, so it may be very slow or close.")) + "\n\n" + L(KEEP_DOWNLOADED);
         if (pg && !strcmp(pg + 1, "aspect")) g_settings.aspect_asked = g_settings.menu_tip_seen = false, g_tip_test = true;
     }
@@ -2298,7 +2298,7 @@ extern "C" void launcher_run(const char *root) {
 #if PLAT_IOS
         if (g_onedrive && plat_ios_cloud_offloaded(rt_data_root())) {
             char msg[700];
-            snprintf(msg, sizeof msg, "%s\n\n%s", L("Some of LAS Recomp's files aren't on this iPhone. They download as the "
+            snprintf(msg, sizeof msg, "%s\n\n%s", L("Some of DKCR Recomp's files aren't on this iPhone. They download as the "
                                                   "game reads them, so it may be very slow or close."), L(KEEP_DOWNLOADED));
             g_notice = msg;  // (notice_popup: in the menus' look)
         }
@@ -2527,7 +2527,7 @@ extern "C" void launcher_run(const char *root) {
             ImGui::SetCursorPos(ImVec2(x0, 120 * s));
             ImGui::PushFont(g_font_title);
             if (page == MAIN) {  // gold to orange, shadowed (not behind the Settings / System windows)
-                const char *t = "LAS Recompiled";
+                const char *t = "DKCR Recompiled";
                 ImVec2 p = ImGui::GetCursorScreenPos();
                 text_fx(ImGui::GetWindowDrawList(), ImGui::GetFont(), ImGui::GetFontSize(), p, IM_COL32(255, 232, 120, 255),
                         IM_COL32(255, 138, 48, 255), t, 3 * s);
@@ -2735,11 +2735,11 @@ extern "C" void launcher_run(const char *root) {
                 };
                 // (the descriptions put together here in the menus' language: the row finds no English for them)
                 std::string src_d = L("Pick the folder with your extracted exefs and romfs from The Legend of Zelda: Link's "
-                                      "Awakening for Switch. LAS Recomp doesn't include the game.");
+                                      "Awakening for Switch. DKCR Recomp doesn't include the game.");
                 if (!src.empty()) src_d += std::string("\n\n") + L("Chosen:") + " " + folder_shown(src.c_str());
                 // the step that's running / its result, under the rows and in the Set up row's explanation
                 const std::string &job_line = job;
-                std::string ex_d = L("Copies the files LAS Recomp needs and recompiles the game from them. You only do this "
+                std::string ex_d = L("Copies the files DKCR Recomp needs and recompiles the game from them. You only do this "
                                      "once, and it takes a while.");
                 if (!job.empty()) ex_d += "\n\n" + shown(job) + (job_hint.empty() ? "" : ".\n" + shown(job_hint));
 
@@ -2780,14 +2780,14 @@ extern "C" void launcher_run(const char *root) {
                     }
                     files_gb = -1;  // (re-measured after a setup)
                 } else {
-                    // DELETE: frees LAS Recomp's copy (runtime/paths.c removes only what the setup made, only inside
+                    // DELETE: frees DKCR Recomp's copy (runtime/paths.c removes only what the setup made, only inside
                     // the data root). Saves, settings and the user's own files stay.
                     if (files_gb < 0) files_gb = rt_game_files_size(g_root.c_str()) / 1e9;
                     char gb[32];
                     snprintf(gb, sizeof gb, "%.1f GB", files_gb);
                     opt_section("Game files");
                     if (!g_confirm_delete) {
-                        if (opt_action("Delete game files", gb, "Frees up the space LAS Recomp's copy of the game files "
+                        if (opt_action("Delete game files", gb, "Frees up the space DKCR Recomp's copy of the game files "
                                        "uses. Your saves and settings stay.", true))
                             g_confirm_delete = true;
                         first_row();
@@ -2798,7 +2798,7 @@ extern "C" void launcher_run(const char *root) {
                             game_files_changed();
                             status = check_game_files(g_root);
                             if (ok) set_job(LN("Game files deleted."));
-                            else set_job(LN("Couldn't delete the game files. They aren't in LAS Recomp's data folder."), true);
+                            else set_job(LN("Couldn't delete the game files. They aren't in DKCR Recomp's data folder."), true);
                             if (!status.empty()) g_bg = 0;
                             g_confirm_delete = false, files_gb = -1;
                         }

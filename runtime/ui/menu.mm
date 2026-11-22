@@ -360,7 +360,7 @@ bool menu_handle_event(const SDL_Event *e) {
     }
 }
 
-// Remember window size (Video tab): the window opens at the size it had when LAS Recomp last quit. The size is taken
+// Remember window size (Video tab): the window opens at the size it had when DKCR Recomp last quit. The size is taken
 // at exit (every quit ends in exit()), not in fullscreen or maximized - those keep the last plain window's size.
 static SDL_Window *g_remember_win;
 static void remember_at_exit(void) {

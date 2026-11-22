@@ -303,7 +303,7 @@ void plat_thread_realtime(uint64_t period_ns) {
 int plat_thread_realtime_check(uint64_t period_ns) { (void)period_ns; return -1; }
 
 // ---- process
-// GUI launches keep their own append-only log; lasrecomp.log names the latest run, with five recent backups.
+// GUI launches keep their own append-only log; dkcrrecomp.log names the latest run, with five recent backups.
 // A launcher and the game it starts share one session, so another launch cannot truncate either writer.
 static char g_log_path[MAX_PATH], g_log_latest[MAX_PATH];
 static char g_log_tag[MAX_PATH + 16];
@@ -327,8 +327,8 @@ static int newest_log(const void *a, const void *b) {
     int time = CompareFileTime(&y->created, &x->created);
     return time ? time : strcmp(y->name, x->name);
 }
-static bool session_log_name(const char *name) {  // lasrecomp-backup-<filetime hex>-<pid>.log
-    if (strncmp(name, "lasrecomp-backup-", 17)) return false;
+static bool session_log_name(const char *name) {  // dkcrrecomp-backup-<filetime hex>-<pid>.log
+    if (strncmp(name, "dkcrrecomp-backup-", 17)) return false;
     const char *p = name + 17;
     while ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || *p == '-') p++;
     return p > name + 17 && !strcmp(p, ".log");
@@ -346,7 +346,7 @@ static void keep_legacy_log(const char *dir) {
         ReadFile(old_file, old_tag, sizeof old_tag - 1, &got, NULL); CloseHandle(old_file);
     }
     char path[MAX_PATH];
-    snprintf(path, sizeof path, "%slasrecomp-backup-*.log", dir);
+    snprintf(path, sizeof path, "%sdkcrrecomp-backup-*.log", dir);
     WIN32_FIND_DATAA data;
     HANDLE find = FindFirstFileA(path, &data);
     bool kept = false;
@@ -358,16 +358,16 @@ static void keep_legacy_log(const char *dir) {
         while (!kept && FindNextFileA(find, &data));
         FindClose(find);
     }
-    // The first launch after upgrading may only have the old lasrecomp.log; retain that report too.
+    // The first launch after upgrading may only have the old dkcrrecomp.log; retain that report too.
     if (!kept) {
         unsigned long long stamp = ((unsigned long long)old.ftCreationTime.dwHighDateTime << 32) | old.ftCreationTime.dwLowDateTime;
-        if (snprintf(path, sizeof path, "%slasrecomp-backup-%016llx-0.log", dir, stamp) < (int)sizeof path)
+        if (snprintf(path, sizeof path, "%sdkcrrecomp-backup-%016llx-0.log", dir, stamp) < (int)sizeof path)
             CopyFileA(g_log_latest, path, TRUE);
     }
 }
 static void prune_logs(const char *dir) {
     char path[MAX_PATH];
-    if (snprintf(path, sizeof path, "%slasrecomp-backup-*.log", dir) >= (int)sizeof path) return;
+    if (snprintf(path, sizeof path, "%sdkcrrecomp-backup-*.log", dir) >= (int)sizeof path) return;
     WIN32_FIND_DATAA data;
     HANDLE find = FindFirstFileA(path, &data);
     if (find == INVALID_HANDLE_VALUE) return;
@@ -394,7 +394,7 @@ static void prune_logs(const char *dir) {
     free(logs);
 }
 
-// NTFS can give the newest session both names, keeping lasrecomp.log current even after a crash. On filesystems
+// NTFS can give the newest session both names, keeping dkcrrecomp.log current even after a crash. On filesystems
 // without hard links, copy on exit instead. The unique session header identifies who owns the latest report;
 // creation times can collide for simultaneous launches. The startup mutex also covers this replacement.
 static void publish_log(void) {
@@ -462,7 +462,7 @@ static void log_to_file_without_console(void) {
     char *slash = strrchr(dir, '\\');
     if (!slash) return;
     slash[1] = 0;
-    if (snprintf(g_log_latest, sizeof g_log_latest, "%slasrecomp.log", dir) >= (int)sizeof g_log_latest) return;
+    if (snprintf(g_log_latest, sizeof g_log_latest, "%sdkcrrecomp.log", dir) >= (int)sizeof g_log_latest) return;
     unsigned long long hash = 14695981039346656037ull;
     for (const unsigned char *p = (const unsigned char *)g_log_latest; *p; p++) hash = (hash ^ *p) * 1099511628211ull;
     char mutex[64]; snprintf(mutex, sizeof mutex, "Local\\LASRecomp.logs.%016llx", hash);
@@ -470,7 +470,7 @@ static void log_to_file_without_console(void) {
     if (!lock_logs()) return;
     FILETIME now; GetSystemTimeAsFileTime(&now);
     unsigned long long stamp = ((unsigned long long)now.dwHighDateTime << 32) | now.dwLowDateTime;
-    int used = fresh ? snprintf(g_log_path, sizeof g_log_path, "%slasrecomp-backup-%016llx-%lu.log", dir, stamp,
+    int used = fresh ? snprintf(g_log_path, sizeof g_log_path, "%sdkcrrecomp-backup-%016llx-%lu.log", dir, stamp,
                                (unsigned long)GetCurrentProcessId())
                      : snprintf(g_log_path, sizeof g_log_path, "%s", inherited);
     HANDLE file = INVALID_HANDLE_VALUE;
@@ -503,7 +503,7 @@ static void log_to_file_without_console(void) {
         keep_legacy_log(dir);
         char next[MAX_PATH];
         // A shorter name than the session path, which was already checked above.
-        snprintf(next, sizeof next, "%slasrecomp-current-%016llx-%lu.tmp", dir, stamp, (unsigned long)GetCurrentProcessId());
+        snprintf(next, sizeof next, "%sdkcrrecomp-current-%016llx-%lu.tmp", dir, stamp, (unsigned long)GetCurrentProcessId());
         bool staged = CreateHardLinkA(next, g_log_path, NULL) != 0;
         if (!staged) {
             // Keep the session header in the placeholder too; the full copy at exit preserves it.
@@ -533,8 +533,8 @@ static void require_cpu(void) {
 #else
     __builtin_cpu_init();
     if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma") && __builtin_cpu_supports("bmi2")) return;
-    MessageBoxA(NULL, "LAS Recomp needs a CPU with AVX2 (Intel Haswell / 2013 or newer, AMD Excavator / Zen or newer).",
-                "LAS Recomp", MB_ICONERROR | MB_OK);
+    MessageBoxA(NULL, "DKCR Recomp needs a CPU with AVX2 (Intel Haswell / 2013 or newer, AMD Excavator / Zen or newer).",
+                "DKCR Recomp", MB_ICONERROR | MB_OK);
     ExitProcess(1);
 #endif
 }
@@ -547,7 +547,7 @@ void plat_fatal_notice(void) {
     rt_crash_explain(text, sizeof text, g_log_path);
     if (!g_log_path[0]) return;
     fflush(stderr);
-    MessageBoxA(NULL, text, "LAS Recomp", MB_ICONERROR | MB_OK);
+    MessageBoxA(NULL, text, "DKCR Recomp", MB_ICONERROR | MB_OK);
 }
 
 bool plat_module_name(uint64_t pc, char *out, size_t n) {
@@ -609,7 +609,7 @@ void plat_system_info(PlatSysInfo *si) {
 
 void plat_init(void) {
     // abort() (rt_fatal_trace, after the crash dialog) without the C runtime's own "Microsoft Visual C++ Runtime
-    // Library - abort() has been called" box and the Windows error report: the player sees only LAS Recomp's dialog
+    // Library - abort() has been called" box and the Windows error report: the player sees only DKCR Recomp's dialog
 #ifdef _WRITE_ABORT_MSG  // (MinGW's stdlib.h declares it with these flags)
     _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT);
 #endif

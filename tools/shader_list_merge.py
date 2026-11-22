@@ -4,11 +4,11 @@
     tools/shader_list_merge.py OUT IN [IN ...]
 
 Each IN is a list in the shipped format, a player's cache/shader_seen.txt (its "# shader_seen" header and any other
-comment lines are dropped) or a lasrecomp.log: its "[shader] record G ..." / "... C ..." lines (each record the shipped
+comment lines are dropped) or a dkcrrecomp.log: its "[shader] record G ..." / "... C ..." lines (each record the shipped
 list lacks, logged once a run). OUT gets every record once, sorted, so a re-run changes only what's new. OUT is read
 too when it exists: records are only ever added.
 
-    tools/shader_list_merge.py runtime/nvn/shader_variants.txt lasrecomp.log
+    tools/shader_list_merge.py runtime/nvn/shader_variants.txt dkcrrecomp.log
 """
 import os
 import sys

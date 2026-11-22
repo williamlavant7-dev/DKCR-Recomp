@@ -17,7 +17,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 APP=${APP:-build/ios-skeleton/LAS Recomp.app}
 VERSION=$(sed -n 's/^#define LARECOMP_VERSION "\(.*\)"/\1/p' runtime/ui/launcher.mm)
-[ -x "$APP/lasrecomp" ] || { echo "no $APP (make ios-skeleton)"; exit 1; }
+[ -x "$APP/dkcrrecomp" ] || { echo "no $APP (make ios-skeleton)"; exit 1; }
 [ -e "$APP/Frameworks/LASGame.framework/LASGame" ] && { echo "$APP holds game code"; exit 1; }
 for t in aarch64-macos x86_64-linux aarch64-linux x86_64-windows aarch64-windows; do
     [ -d "build/lld/$t/bin" ] && [ -f "build/lld/$t/LICENSE.TXT" ] || { echo "no build/lld/$t (LLD_TARGET=$t tools/fetch_lld.sh)"; exit 1; }

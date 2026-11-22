@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory() as temporary:
     os.environ['LARECOMP_CC'] = compiler
     if os.name == 'nt':
         stub=tmp/'stub.c'; stub.write_text('int fixture_export;\n')
-        subprocess.run(cc+[str(stub),'-shared','-Wl,--out-implib,'+str(resources/'build/lasrecomp.dll.a'),
+        subprocess.run(cc+[str(stub),'-shared','-Wl,--out-implib,'+str(resources/'build/dkcrrecomp.dll.a'),
                            '-o',str(tmp/'stub.dll')],check=True)
     objects=[]
     for source in ('runtime/gamebuild.c','runtime/zipfile.c',str(MINIZ/'miniz.c')):
@@ -165,7 +165,7 @@ with tempfile.TemporaryDirectory() as temporary:
         assert run(),why.value
         assert not generators() and len(compiles())==10-saved
         assert not (work/'main').exists() and not (work/'sdk').exists() and not (work/'in-progress').exists()
-        output=next(p for p in game.glob('lasgame.*') if p.suffix!='.id')
+        output=next(p for p in game.glob('dkcrgame.*') if p.suffix!='.id')
         before=hashlib.sha256(output.read_bytes()).digest()
         (work/'main_000.o').write_bytes(b'corrupt')
         assert run(),why.value

@@ -12,7 +12,7 @@ bool plat_module_name(uint64_t pc, char *out, size_t n) {
 // The game code is the one module the dialog also knows by address.
 const char *rt_host_fn_name(uint64_t pc, uint64_t *offset) {
     (void)pc, (void)offset;
-    return strstr(g_module, "lasgame") ? "game_fn" : NULL;
+    return strstr(g_module, "dkcrgame") ? "game_fn" : NULL;
 }
 const GameVersion *game_version(void) { return NULL; }
 uint64_t game_romfs_bytes(const GameVersion *v) { (void)v; return 0; }
@@ -32,12 +32,12 @@ static const char *const drivers[] = {
     "/System/Library/Extensions/AGXMetalG13X.bundle/Contents/MacOS/AGXMetalG13X",
 };
 static const char *const not_drivers[] = {
-    "C:\\Users\\Rigdon\\Desktop\\LAS Recomp\\extracted\\lasgame.dll",
-    "D:\\Games\\BigDrive\\LAS Recomp\\extracted\\lasgame.dll",
-    "/home/rigdon/libvulkan_builds/lasgame.so",
-    "/mnt/vulkan.games/lasgame.so",
-    "C:\\Users\\Sam\\Desktop\\LAS Recomp\\extracted\\lasgame.dll",
-    "/home/rigdon/LAS Recomp/lasrecomp",
+    "C:\\Users\\Rigdon\\Desktop\\LAS Recomp\\extracted\\dkcrgame.dll",
+    "D:\\Games\\BigDrive\\LAS Recomp\\extracted\\dkcrgame.dll",
+    "/home/rigdon/libvulkan_builds/dkcrgame.so",
+    "/mnt/vulkan.games/dkcrgame.so",
+    "C:\\Users\\Sam\\Desktop\\LAS Recomp\\extracted\\dkcrgame.dll",
+    "/home/rigdon/LAS Recomp/dkcrrecomp",
     "/usr/lib/libvulkan.so.1",           // the Vulkan loader, not a driver
     "/system/lib64/libvulkan.so",
     "C:\\Windows\\System32\\vulkan-1.dll",
@@ -67,7 +67,7 @@ int main(void) {
     for (size_t i = 0; i < sizeof drivers / sizeof *drivers; i++) check(drivers[i], true);
     for (size_t i = 0; i < sizeof not_drivers / sizeof *not_drivers; i++) check(not_drivers[i], false);
     char dialog[1600];
-    driver_crash("C:\\Users\\Rigdon\\LAS Recomp\\extracted\\lasgame.dll", dialog, sizeof dialog);
+    driver_crash("C:\\Users\\Rigdon\\LAS Recomp\\extracted\\dkcrgame.dll", dialog, sizeof dialog);
     if (strncmp(dialog, "The game crashed", 16)) fails++, printf("FAIL game code under Rigdon: \"%.40s\"\n", dialog);
     printf("%s\n", fails ? "crash explain: FAILED" : "crash explain: all passed");
     return fails != 0;

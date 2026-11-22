@@ -20,7 +20,7 @@
 
 void rt_crash_explain(char *out, size_t n, const char *log_path);  // runtime/crash_explain.c
 
-// Started as the app (Finder, Dock: no terminal): stdout / stderr go to lasrecomp.log in the data folder, with five
+// Started as the app (Finder, Dock: no terminal): stdout / stderr go to dkcrrecomp.log in the data folder, with five
 // backups (posix_log.h; as on Linux / Windows), and a fatal error is explained in an alert instead of the app
 // vanishing. Runs from a terminal or a test script (not the .app's executable) keep their own output.
 static char g_log_path[1024];
@@ -86,7 +86,7 @@ void plat_fatal_notice(void) {
     if (!g_log_path[0]) return;
     fflush(stderr);
     CFStringRef msg = CFStringCreateWithCString(NULL, text, kCFStringEncodingUTF8);
-    CFUserNotificationDisplayAlert(0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, CFSTR("LAS Recomp"), msg,
+    CFUserNotificationDisplayAlert(0, kCFUserNotificationStopAlertLevel, NULL, NULL, NULL, CFSTR("DKCR Recomp"), msg,
                                    CFSTR("OK"), NULL, NULL, NULL);
     if (msg) CFRelease(msg);
 }

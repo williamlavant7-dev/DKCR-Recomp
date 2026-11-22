@@ -1,4 +1,4 @@
-# Building LAS Recomp on Windows (x86-64, and ARM64 experimental)
+# Building DKCR Recomp on Windows (x86-64, and ARM64 experimental)
 
 Status: part of main. Builds and runs the game on Vulkan (with your own game files); `make dist` packages the
 release zip.
@@ -24,7 +24,12 @@ From an MSYS2 UCRT64 shell, or Git Bash with MSYS2 first on PATH:
 
     export PATH="/c/msys64/ucrt64/bin:/c/msys64/usr/bin:$PATH"
     make gen        # once: recompile the game from extracted/exefs (your own game files; see the start screen)
-    make -j         # -> build/lasrecomp.exe and the game code library build/lasgame.dll
+    make -j         # -> build/dkcrrecomp.exe and the game code library build/dkcrgame.dll
+
+To play by double-clicking, after `make`: `tools/windows_play_folder.sh <game files folder>` (the folder with
+`exefs/` and `romfs/`) puts together `build/DKCR Recomp/`: a release `dkcrrecomp.exe` (no console window, the log is
+`dkcrrecomp.log` next to it), the game code, the DLLs from MSYS2, and links to the game files. Saves stay in that
+folder. Run it again after each build.
 
 Without `generated/` only the app is built: the start screen builds the game code itself when you set up the game
 files (as for players), given the generator and the compiler (`make gen-helper`, `tools/fetch_zig.sh`).
@@ -38,9 +43,9 @@ Vulkan, shaderc DLLs).
     make rando-helper   # the seed generator without Python (build/helper/rando-gen)
     make gen-helper     # the game code generator without Python (build/helper/lasgen)
     tools/fetch_zig.sh  # the compiler the start screen builds the game code with (build/zig)
-    make dist           # -> build/dist/LAS Recomp-<version>-windows.zip (no game code inside)
+    make dist           # -> build/dist/DKCR Recomp-<version>-windows.zip (no game code inside)
 
-The zip's `LAS Recomp/` folder holds `lasrecomp.exe` (icon from `docs/icon/icon.ico`, via windres),
+The zip's `DKCR Recomp/` folder holds `dkcrrecomp.exe` (icon from `docs/icon/icon.ico`, via windres),
 `rando-gen/` and the MSYS2 DLLs. No installer: game files, saves, seeds and settings are kept next to the exe, so
 the folder must be writable (the app says so and quits if it isn't, e.g. under Program Files). A source checkout
 with `extracted/` in the starting folder keeps using that folder instead.
@@ -58,7 +63,7 @@ above, except that the helpers need that Python passed in (there is no `py` laun
     make rando-helper RANDO_PY="$PY64"
     make gen-helper RANDO_PY="$PY64"
     tools/fetch_zig.sh  # (zig for aarch64-windows)
-    make dist           # -> build/dist/LAS Recomp-<version>-windows-arm64.zip
+    make dist           # -> build/dist/DKCR Recomp-<version>-windows-arm64.zip
 
 Everything in the zip is ARM64 except the two helpers (`lasgen`, `rando-gen`), which are x64. AArch64 FP/SIMD
 instructions stay inline assembly (`--simd asm`), as on the Mac. The ARM64 zip is not part of the normal releases.

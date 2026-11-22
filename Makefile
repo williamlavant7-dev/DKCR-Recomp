@@ -1,4 +1,4 @@
-# LAS Recomp build
+# DKCR Recomp build
 # macOS: Homebrew clang/SDL3/FFmpeg, Metal renderer.
 # Windows: MSYS2 UCRT64 shell (see docs/BUILD-windows.md), clang + Vulkan renderer.
 # Linux: clang + Vulkan renderer, x86-64 or aarch64 (see docs/linux.md).
@@ -108,7 +108,7 @@ endif
 ifeq ($(PLATFORM),macos)
 SDL      := $(or $(DEPS),/opt/homebrew/opt/sdl3)
 FFMPEG   := $(or $(DEPS),/opt/homebrew/opt/ffmpeg)
-EXE      := $(B)/lasrecomp
+EXE      := $(B)/dkcrrecomp
 DEPINC   := -I$(SDL)/include -I$(FFMPEG)/include
 LDFLAGS  := -L$(SDL)/lib -lSDL3 -Wl,-rpath,$(SDL)/lib -L$(FFMPEG)/lib -lavformat -lavcodec -lavutil -lswscale -Wl,-rpath,$(FFMPEG)/lib \
             -framework CoreFoundation -framework Foundation -framework Metal -framework MetalFX -framework QuartzCore -framework AppKit -framework ImageIO -framework CoreGraphics -framework UniformTypeIdentifiers
@@ -116,11 +116,11 @@ BACKEND_SRC := $(wildcard runtime/nvn/*.m)
 BACKEND_OBJ := $(patsubst runtime/%.m,$(B)/rt/%.o,$(BACKEND_SRC))
 IMGUI_OBJ += $(B)/imgui/imgui_impl_metal.o
 UIFLAGS  := -fobjc-arc
-GAMELIB  := $(B)/lasgame.dylib
+GAMELIB  := $(B)/dkcrgame.dylib
 GAMELIB_LDFLAGS := -dynamiclib -undefined dynamic_lookup  # (the runtime functions it calls: the app's own)
 GAMELIB_SHARED := -shared -Wl,-undefined,dynamic_lookup  # (the same, for the start screen's build: zig cc)
 else ifeq ($(PLATFORM),ios)
-EXE      := $(B)/lasrecomp
+EXE      := $(B)/dkcrrecomp
 # the embedded CPython (BeeWare's Python.xcframework, `make deps-ios`): the seed generator runs in-process
 PYFW     := $(DEPS)/Python.xcframework/$(IOS_SLICE)
 DEPINC   := -I$(DEPS)/include -I$(PYFW)/include/python$(PYV) -DLARECOMP_PY_VERSION='"$(PYV)"'
@@ -140,11 +140,11 @@ BACKEND_SRC := $(wildcard runtime/nvn/*.m) runtime/platform/ios_glue.m runtime/p
 BACKEND_OBJ := $(patsubst runtime/%.m,$(B)/rt/%.o,$(BACKEND_SRC))
 IMGUI_OBJ += $(B)/imgui/imgui_impl_metal.o
 UIFLAGS  := -fobjc-arc
-GAMELIB  := $(B)/lasgame.dylib
+GAMELIB  := $(B)/dkcrgame.dylib
 GAMELIB_LDFLAGS := -dynamiclib -undefined dynamic_lookup -install_name @rpath/LASGame.framework/LASGame
 GAMELIB_SHARED :=  # (never built on the device)
 else ifeq ($(PLATFORM),linux)
-EXE      := $(B)/lasrecomp
+EXE      := $(B)/dkcrrecomp
 DEPINC   := $(if $(DEPS),-I$(DEPS)/include)
 ifeq ($(ARCH),x86_64)
 GENARCH  ?= -march=x86-64-v3  # as on Windows: AVX2 + FMA for the lifted FP/SIMD code (checked at startup)
@@ -162,11 +162,11 @@ BACKEND_SRC := $(wildcard runtime/nvn/vulkan/*.c) $(wildcard runtime/nvn/vulkan/
 BACKEND_OBJ := $(patsubst runtime/%.cpp,$(B)/rt/%.o,$(patsubst runtime/%.c,$(B)/rt/%.o,$(BACKEND_SRC)))
 IMGUI_OBJ += $(B)/imgui/imgui_impl_vulkan.o
 UIFLAGS  := -x c++  # the .mm UI sources are plain C++ apart from __APPLE__ blocks
-GAMELIB  := $(B)/lasgame.so
+GAMELIB  := $(B)/dkcrgame.so
 GAMELIB_LDFLAGS := -shared -fuse-ld=lld  # (the runtime functions it calls: the app's own, -rdynamic)
 GAMELIB_SHARED := -shared
 else
-EXE      := $(B)/lasrecomp.exe
+EXE      := $(B)/dkcrrecomp.exe
 DEPINC   := $(if $(DEPS),-I$(DEPS)/include)
 OSFLAGS  := -D_FILE_OFFSET_BITS=64 -D_POSIX_THREAD_SAFE_FUNCTIONS -D_CRT_RAND_S -DWIN32_LEAN_AND_MEAN -DNOMINMAX \
             $(if $(RELEASE),-DLARECOMP_ZIP_BUILD)  # (the log's [info] line: the release zip)
@@ -180,7 +180,7 @@ endif
 GENFLAGS += -D_FILE_OFFSET_BITS=64 $(GENARCH)
 LDFLAGS  := -fuse-ld=lld -Wl,--stack,16777216 $(if $(DEPS),-L$(DEPS)/lib) -lSDL3 -lavformat -lavcodec -lavutil -lswscale \
             -lvulkan-1 -lws2_32 -lwinmm -lole32 -lshell32 -lcomdlg32 -luuid -lshaderc_shared \
-            $(if $(RELEASE),-Wl$(comma)--subsystem$(comma)windows -Wl$(comma)--strip-debug)  # release: no console window (log -> lasrecomp.log + lasrecomp-backup-*.log), no debug info
+            $(if $(RELEASE),-Wl$(comma)--subsystem$(comma)windows -Wl$(comma)--strip-debug)  # release: no console window (log -> dkcrrecomp.log + dkcrrecomp-backup-*.log), no debug info
 ifeq ($(WINARCH),aarch64)
 LDFLAGS  += -lpthread  # (winpthreads: linked implicitly by UCRT64's toolchain, not by CLANGARM64's)
 endif
@@ -190,10 +190,10 @@ BACKEND_OBJ += $(B)/rt/platform/windows_rc.o  # the .exe's icon (Explorer, taskb
 WINDRES  ?= windres
 IMGUI_OBJ += $(B)/imgui/imgui_impl_vulkan.o
 UIFLAGS  := -x c++ $(OSFLAGS)  # the .mm UI sources are plain C++ apart from __APPLE__ blocks
-GAMELIB  := $(B)/lasgame.dll
+GAMELIB  := $(B)/dkcrgame.dll
 # the runtime functions it calls: exported by the .exe, linked through its import library
-LDFLAGS  += -Wl,--export-all-symbols -Wl,--out-implib,$(B)/lasrecomp.dll.a
-GAMELIB_LDFLAGS := -shared -fuse-ld=lld $(B)/lasrecomp.dll.a
+LDFLAGS  += -Wl,--export-all-symbols -Wl,--out-implib,$(B)/dkcrrecomp.dll.a
+GAMELIB_LDFLAGS := -shared -fuse-ld=lld $(B)/dkcrrecomp.dll.a
 # clang hands DKCR's long link line to lld in a response file in %TMP%, which can reach make's recipes empty
 # ("unable to make temporary file"): the link gets a temp folder of its own.
 GAMELIB_TMPENV = mkdir -p $(B)/tmp && TMP="$$(cygpath -w "$(abspath $(B))/tmp")" TEMP="$$(cygpath -w "$(abspath $(B))/tmp")"
@@ -356,7 +356,7 @@ $(B)/rt/platform/windows_rc.o: runtime/platform/windows.rc docs/icon/icon.ico ru
 
 VERSION  := $(shell sed -n 's/^\#define LARECOMP_VERSION "\(.*\)"/\1/p' runtime/ui/launcher.mm)
 
-# macOS: build/LAS Recomp.app, runs on macOS $(APP_MIN)+: the game rebuilt for that in build/mac15 against build/deps
+# macOS: build/DKCR Recomp.app, runs on macOS $(APP_MIN)+: the game rebuilt for that in build/mac15 against build/deps
 # (`make deps`: SDL3, LGPL FFmpeg, keystone, Python, from pinned sources), the game code generator helper when built
 # (`make gen-helper` after `make deps`), packaged by tools/bundle_macos.sh. No game files or fonts.
 APP_MIN  := 15.0
@@ -367,50 +367,50 @@ deps-ios:
 	IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/build_deps_ios.sh
 deps-ios-sim:
 	SIM=1 IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/build_deps_ios.sh
-# iOS: build/ios/LAS Recomp.app and build/dist/LAS Recomp-<version>-iOS.ipa, signed with TEAM_ID / PROFILE
+# iOS: build/ios/DKCR Recomp.app and build/dist/DKCR Recomp-<version>-iOS.ipa, signed with TEAM_ID / PROFILE
 # (tools/bundle_ios.sh); DEVICE=<devicectl id> installs and launches it. Holds the game code: for your own devices only.
 ipa:
 	$(MAKE) PLATFORM=ios
-	IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/bundle_ios.sh build/ios/lasrecomp build/ios/lasgame.dylib
+	IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/bundle_ios.sh build/ios/dkcrrecomp build/ios/dkcrgame.dylib
 app:
 	@[ -f build/deps/lib/libSDL3.0.dylib ] || { echo "make deps first"; exit 1; }
-	$(MAKE) B=$(APP_B) MACOS_MIN=$(APP_MIN) DEPS=$(CURDIR)/build/deps $(APP_B)/lasrecomp
-	MACOS_MIN=$(APP_MIN) tools/bundle_macos.sh $(APP_B)/lasrecomp
-# The iOS app without game code (build/ios-skeleton/LAS Recomp.app), and the release's iOS kit around it
-# (build/dist/LAS Recomp-<version>-iOS.laskit: a zip with the app as Payload/, a linker for each desktop, the Darwin
+	$(MAKE) B=$(APP_B) MACOS_MIN=$(APP_MIN) DEPS=$(CURDIR)/build/deps $(APP_B)/dkcrrecomp
+	MACOS_MIN=$(APP_MIN) tools/bundle_macos.sh $(APP_B)/dkcrrecomp
+# The iOS app without game code (build/ios-skeleton/DKCR Recomp.app), and the release's iOS kit around it
+# (build/dist/DKCR Recomp-<version>-iOS.laskit: a zip with the app as Payload/, a linker for each desktop, the Darwin
 # headers), which the start screen on any desktop completes with the library it builds there (runtime/iosexport.c).
 # Needs `make deps-ios`; the kit needs the five linkers (tools/fetch_lld.sh for each LLD_TARGET).
 ios-skeleton:
-	$(MAKE) PLATFORM=ios build/ios/lasrecomp
-	SKELETON=1 APP="build/ios-skeleton/LAS Recomp.app" IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/bundle_ios.sh build/ios/lasrecomp
+	$(MAKE) PLATFORM=ios build/ios/dkcrrecomp
+	SKELETON=1 APP="build/ios-skeleton/DKCR Recomp.app" IOS_MIN=$(IOS_MIN) PYV=$(PYV) tools/bundle_ios.sh build/ios/dkcrrecomp
 ios-kit: ios-skeleton $(MINIZ)/.fetched  # (the kit carries miniz's licence: the desktops' export reads it with miniz)
 	tools/ios_kit.sh
-# The simulator app (build/ios-sim/LAS Recomp.app, no game code, ad-hoc signed) and its run of the embedded
+# The simulator app (build/ios-sim/DKCR Recomp.app, no game code, ad-hoc signed) and its run of the embedded
 # Python's self-test (tools/test_ios_sim.sh): what CI does on a Mac runner. Needs `make deps-ios-sim`.
 ios-sim:
-	$(MAKE) PLATFORM=ios IOS_SIM=1 build/ios-sim/lasrecomp
-	SKELETON=1 IOS_SIM=1 APP="build/ios-sim/LAS Recomp.app" IOS_MIN=$(IOS_MIN) PYV=$(PYV) DEPS=build/deps-ios-sim tools/bundle_ios.sh build/ios-sim/lasrecomp
+	$(MAKE) PLATFORM=ios IOS_SIM=1 build/ios-sim/dkcrrecomp
+	SKELETON=1 IOS_SIM=1 APP="build/ios-sim/DKCR Recomp.app" IOS_MIN=$(IOS_MIN) PYV=$(PYV) DEPS=build/deps-ios-sim tools/bundle_ios.sh build/ios-sim/dkcrrecomp
 ios-sim-test: ios-sim
-	tools/test_ios_sim.sh "build/ios-sim/LAS Recomp.app"
+	tools/test_ios_sim.sh "build/ios-sim/DKCR Recomp.app"
 
-# macOS release disk image (the .app + an Applications shortcut to drag it onto): build/dist/LAS Recomp-<v>-macOS.dmg
+# macOS release disk image (the .app + an Applications shortcut to drag it onto): build/dist/DKCR Recomp-<v>-macOS.dmg
 dmg: app
 	tools/make_dmg.sh
 
-# Windows: build/dist/LAS Recomp-<version>-windows.zip, top folder "LAS Recomp/": the exe, what the start screen
+# Windows: build/dist/DKCR Recomp-<version>-windows.zip, top folder "DKCR Recomp/": the exe, what the start screen
 # builds the game code with on the player's machine (make gen-helper,
 # tools/fetch_zig.sh slimmed by tools/zig_slim.sh: its runtime built ahead of time, gamelib-src/, the exe's import library)
 # and the DLLs they load (runs without MSYS2). No game code. The exe is a release build in $(WIN_B):
 # linked against the LGPL FFmpeg from `make deps-windows` (MSYS2's is a GPLv3 build) and without a console window
-# (RELEASE=1: the log goes next to the exe - lasrecomp.log is the latest run, plus up to five recent
-# lasrecomp-backup-*.log - and fatal errors show a message box). Its DLLs are looked up
+# (RELEASE=1: the log goes next to the exe - dkcrrecomp.log is the latest run, plus up to five recent
+# dkcrrecomp-backup-*.log - and fatal errors show a message box). Its DLLs are looked up
 # with build/deps-win/bin first (the FFmpeg DLL names are the same as MSYS2's GPL ones). vulkan-1.dll is left
 # out: every Vulkan driver installs the loader in System32. Saves and game files go next to the exe at run time.
 # Needs: Windows 10+ x64, a Vulkan 1.3 driver, an AVX2 CPU (GENARCH x86-64-v3; checked at startup).
-# ARM64 (experimental, from an MSYS2 CLANGARM64 shell): the same steps give LAS Recomp-<version>-windows-arm64.zip; its
+# ARM64 (experimental, from an MSYS2 CLANGARM64 shell): the same steps give DKCR Recomp-<version>-windows-arm64.zip; its
 # helper is built with an x64 Python 3.12 (GEN_PY=...: capstone / unicorn have no ARM64 Windows wheels) and runs
 # under emulation, everything else is ARM64.
-DIST     := build/dist/LAS Recomp
+DIST     := build/dist/DKCR Recomp
 WIN_B    := build/win-release
 # the zip's platform name, as the update check names it (runtime/ui/launcher.mm LARECOMP_PLATFORM)
 WINZIP   := windows$(if $(filter aarch64,$(WINARCH)),-arm64)
@@ -420,10 +420,10 @@ dist:
 	@[ -f build/deps-win/lib/libavcodec.dll.a ] || { echo "make deps-windows first (LGPL FFmpeg)"; exit 1; }
 	@[ -d build/helper/lasgen ] || { echo "make gen-helper first (the game code generator)"; exit 1; }
 	@[ -x build/zig/zig.exe ] || { echo "tools/fetch_zig.sh first (the compiler)"; exit 1; }
-	$(MAKE) B=$(WIN_B) DEPS=$(CURDIR)/build/deps-win RELEASE=1 $(WIN_B)/lasrecomp.exe
-	! nm $(WIN_B)/lasrecomp.exe | grep ' f_70' >/dev/null  # (no game code inside)
+	$(MAKE) B=$(WIN_B) DEPS=$(CURDIR)/build/deps-win RELEASE=1 $(WIN_B)/dkcrrecomp.exe
+	! nm $(WIN_B)/dkcrrecomp.exe | grep ' f_70' >/dev/null  # (no game code inside)
 	rm -rf build/dist && mkdir -p "$(DIST)/gamelib-src"
-	cp $(WIN_B)/lasrecomp.exe $(WIN_B)/lasrecomp.dll.a "$(DIST)/"
+	cp $(WIN_B)/dkcrrecomp.exe $(WIN_B)/dkcrrecomp.dll.a "$(DIST)/"
 	tools/zig_slim.sh $(strip $(filter-out -Iruntime,$(GENFLAGS)))  # (zig with its runtime built ahead of time)
 	cp -R build/helper/lasgen "$(DIST)/"
 	cp -R build/zig-slim "$(DIST)/zig"
@@ -435,7 +435,7 @@ dist:
 	cp third_party/fonts/DejaVu/DejaVuSans.ttf third_party/fonts/DejaVu/DejaVuSans-Bold.ttf "$(DIST)/"  # (last-resort fonts, free license)
 	cp third_party/fonts/DejaVu/LICENSE "$(DIST)/DejaVu-LICENSE.txt"
 	cp README.md LICENSE "$(DIST)/"  # (licenses and source links of the bundled components: README "License")
-	PATH="$(CURDIR)/build/deps-win/bin:$$PATH" ldd $(WIN_B)/lasrecomp.exe | awk '(/ucrt64/ || /clangarm64/ || /deps-win/) && !/vulkan-1/ {print $$3}' | sort -u | \
+	PATH="$(CURDIR)/build/deps-win/bin:$$PATH" ldd $(WIN_B)/dkcrrecomp.exe | awk '(/ucrt64/ || /clangarm64/ || /deps-win/) && !/vulkan-1/ {print $$3}' | sort -u | \
 	    xargs -I{} cp -u {} "$(DIST)/"
 	! ls "$(DIST)" | grep -iE 'x264|x265|xvid|postproc'  # (no GPL codec libraries in the release)
 	# (no path of this machine inside: build/deps-win, debug info, zig's runtime. Not on CI: its paths name no one)
@@ -443,9 +443,9 @@ dist:
 	    case "$$(basename "$$(cygpath -u "$$USERPROFILE")")" in runner|runneradmin) h= ;; *) h=$$(cygpath -m "$$USERPROFILE") ;; esac; \
 	    ! grep -rlaiF -e "$(CURDIR)" -e "$$(cygpath -m '$(CURDIR)')" -e "$$(cygpath -w '$(CURDIR)')" \
 	        $${h:+-e "$$h" -e "$$(cygpath -w "$$h")"} "$(DIST)"; fi
-	cd build/dist && if command -v zip >/dev/null; then zip -qr "LAS Recomp-$(VERSION)-$(WINZIP).zip" "LAS Recomp"; \
-	    else /c/Windows/System32/tar.exe -a -cf "LAS Recomp-$(VERSION)-$(WINZIP).zip" "LAS Recomp"; fi
-	@echo "build/dist/LAS Recomp-$(VERSION)-$(WINZIP).zip"
+	cd build/dist && if command -v zip >/dev/null; then zip -qr "DKCR Recomp-$(VERSION)-$(WINZIP).zip" "DKCR Recomp"; \
+	    else /c/Windows/System32/tar.exe -a -cf "DKCR Recomp-$(VERSION)-$(WINZIP).zip" "DKCR Recomp"; fi
+	@echo "build/dist/DKCR Recomp-$(VERSION)-$(WINZIP).zip"
 
 # The game code generator as a standalone helper, so players need no Python (tools/lasgen.spec, frozen by
 # PyInstaller in its own venv, build/gen-venv): build/helper/lasgen/, shipped as lasgen/ next to the exe or in
@@ -471,7 +471,7 @@ build/gen-venv/.ok:
 	$(GEN_VPY) -m pip install -q pyinstaller==6.22.3 capstone==5.0.9 unicorn==2.1.4 lz4==4.4.5
 	touch $@
 
-# Linux: build/dist/LAS Recomp-<version>-linux-<arch>.AppImage, built in Ubuntu 22.04 containers (podman) with SDL3, LGPL
+# Linux: build/dist/DKCR Recomp-<version>-linux-<arch>.AppImage, built in Ubuntu 22.04 containers (podman) with SDL3, LGPL
 # FFmpeg, shaderc and the game code generator helper inside; the Vulkan loader and GPU drivers are the system's.
 # `make appimage` (ARCH: this machine's, or aarch64 cross-compiled), `make appimages` both. See docs/linux.md.
 appimage:

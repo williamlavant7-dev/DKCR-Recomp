@@ -2,7 +2,7 @@
 Type=Application
 Name=LAS Recomp
 Comment=The Legend of Zelda: Link's Awakening, recompiled (bring your own game files)
-Exec=lasrecomp
-Icon=lasrecomp
+Exec=dkcrrecomp
+Icon=dkcrrecomp
 Categories=Game;
 Terminal=false

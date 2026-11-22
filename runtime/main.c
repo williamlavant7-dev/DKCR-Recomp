@@ -1,4 +1,4 @@
-// LAS Recomp entry: load modules, set up the kernel, run nn::init::Start on the main thread.
+// DKCR Recomp entry: load modules, set up the kernel, run nn::init::Start on the main thread.
 #include <SDL3/SDL.h>
 #include "platform.h"
 #if defined(__ANDROID__) || PLAT_IOS
@@ -279,7 +279,7 @@ static void log_startup_info(void) {
     char ram[32] = "RAM unknown";
     if (si.ram && tenths % 10) snprintf(ram, sizeof ram, "%llu.%llu GB RAM", tenths / 10, tenths % 10);
     else if (si.ram) snprintf(ram, sizeof ram, "%llu GB RAM", tenths / 10);
-    fprintf(stderr, "[info] LAS Recomp %s, %s, %s%s, %s%s%s\n", larecomp_version(), si.os[0] ? si.os : "unknown OS",
+    fprintf(stderr, "[info] DKCR Recomp %s, %s, %s%s, %s%s%s\n", larecomp_version(), si.os[0] ? si.os : "unknown OS",
             si.cpu[0] ? si.cpu : "unknown CPU", cores, ram, si.package ? ", " : "", si.package ? si.package : "");
 }
 
@@ -366,9 +366,16 @@ int main(int argc, char **argv) {
         return iosexport_run_cli(arg_kit, root) ? 0 : 1;
     }
 #else
-    if (build_ios) { fprintf(stderr, "the iOS export isn't in this build of LAS Recomp\n"); return 1; }
+    if (build_ios) { fprintf(stderr, "the iOS export isn't in this build of DKCR Recomp\n"); return 1; }
 #endif
+    // Workaround: the start screen still sets up and checks Link's Awakening's files (its file list, its versions) and
+    // turns DKCR's away, so with DKCR's files already in the game folder it is passed over and the game starts - a
+    // double-click on the exe plays. LARECOMP_FORCE_LAUNCHER=1 still shows it.
+    const GameVersion *gv = game_version_of(root);
+    bool dkcr_files = gv && !strcmp(gv->key, "dkcr") && !getenv("LARECOMP_FORCE_LAUNCHER");
+    if (dkcr_files) skip_launcher = true;
     for (bool title = !skip_launcher;;) {
+        if (title && dkcr_files) title = false;  // ("Title screen" in game: the game again, as above)
         if (title && no_launcher) {
             fprintf(stderr, "[main] LARECOMP_NO_LAUNCHER is set: not showing the start screen - exiting\n");
             exit(3);

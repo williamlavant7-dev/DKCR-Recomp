@@ -116,7 +116,7 @@ void ios_export_rows(bool ready, bool busy, SDL_Window *win) {
     // (the descriptions are put together here, each part through L(): the rows translate only whole literals)
     opt_section("Files");
     char kit_name[64];
-    snprintf(kit_name, sizeof kit_name, "LAS Recomp-%s-iOS.laskit", larecomp_version());
+    snprintf(kit_name, sizeof kit_name, "DKCR Recomp-%s-iOS.laskit", larecomp_version());
     char kit_line[512];
     snprintf(kit_line, sizeof kit_line, L("The iOS kit of this release: %s from the release page (the app without game "
                                           "code, and the tools that build it on this machine). Used as it is: don't unpack it."), kit_name);

@@ -41,7 +41,7 @@ static ZipReader *kit_open(const char *kit, char *why, size_t why_size) {
     char *v = i >= 0 ? zip_read(z, i, &size) : NULL;
     if (v) v[strcspn(v, "\r\n")] = 0;
     bool same = v && !strcmp(v, larecomp_version());
-    if (!same) snprintf(why, why_size, "this iOS kit is from %s, and this is LAS Recomp %s: choose the kit of the same release",
+    if (!same) snprintf(why, why_size, "this iOS kit is from %s, and this is DKCR Recomp %s: choose the kit of the same release",
                         v && *v ? v : "another release", larecomp_version());
     free(v);
     if (!same) { zip_close(z); return NULL; }
@@ -154,7 +154,7 @@ void iosexport_default_path(char *out, size_t n) {
 #else
     const char *home = getenv("HOME");
 #endif
-    snprintf(out, n, "%s" SEP "Downloads" SEP "LAS Recomp-%s-iOS.ipa", home && *home ? home : ".", larecomp_version());
+    snprintf(out, n, "%s" SEP "Downloads" SEP "DKCR Recomp-%s-iOS.ipa", home && *home ? home : ".", larecomp_version());
 }
 
 // One 0-1 across the whole export: the game code build (its own 0-1) fills the first BUILD_SHARE, the .ipa the rest.
@@ -181,7 +181,7 @@ bool iosexport_run(const char *game_dir, const IosExportOpts *o, char *why, size
     }
 
     // 2. the .ipa: the kit's Payload/ entries as they are (no recompression) +
-    //    Payload/LAS Recomp.app/Frameworks/LASGame.framework/{LASGame,LASGame.id}
+    //    Payload/DKCR Recomp.app/Frameworks/LASGame.framework/{LASGame,LASGame.id}
     if (o->progress) o->progress(BUILD_SHARE, "Writing the .ipa...");
     char tmp[1200], lib[1100], id[1100], zwhy[256];
     snprintf(tmp, sizeof tmp, "%s.tmp", o->out_ipa);
@@ -201,7 +201,7 @@ bool iosexport_run(const char *game_dir, const IosExportOpts *o, char *why, size
         if (o->progress) o->progress(BUILD_SHARE + (1 - BUILD_SHARE) * 0.9 * (i + 1) / n, "Writing the .ipa...");
     }
     // (the framework's folder and Info.plist are in the kit already: tools/bundle_ios.sh SKELETON=1)
-    const char *fw = "Payload/LAS Recomp.app/Frameworks/LASGame.framework";
+    const char *fw = "Payload/DKCR Recomp.app/Frameworks/LASGame.framework";
     char name[1200];
     snprintf(name, sizeof name, "%s/LASGame", fw);
     if (ok) ok = zip_add_file(w, name, lib, true);

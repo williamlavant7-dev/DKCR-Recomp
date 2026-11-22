@@ -117,17 +117,17 @@ with tempfile.TemporaryDirectory(prefix='windows-logs-', dir=build) as directory
         for process in processes:
             if process.poll() is None: process.kill(); process.wait()
     for i, process in enumerate(processes):
-        log, = temporary.glob(f'lasrecomp-backup-*-{process.pid}.log')
+        log, = temporary.glob(f'dkcrrecomp-backup-*-{process.pid}.log')
         assert log.exists(), 'Independent GUI launches did not get separate logs'
         lines = session_lines(log)
         assert lines == [f'stdout:independent-{i}', f'stderr:independent-{i}'], (log.name, lines)
 
     parent = start('parent'); finish(parent)
-    parent_log, = temporary.glob(f'lasrecomp-backup-*-{parent.pid}.log')
+    parent_log, = temporary.glob(f'dkcrrecomp-backup-*-{parent.pid}.log')
     lines = session_lines(parent_log)
     assert lines == ['stdout:parent', 'stderr:parent', 'stdout:child', 'stderr:child', 'parent-after-child'], lines
-    assert len(list(temporary.glob('lasrecomp-*.log'))) == 3, 'Relaunch created another log'
-    assert (temporary/'lasrecomp.log').read_bytes() == parent_log.read_bytes()
+    assert len(list(temporary.glob('dkcrrecomp-*.log'))) == 3, 'Relaunch created another log'
+    assert (temporary/'dkcrrecomp.log').read_bytes() == parent_log.read_bytes()
     assert finish(start('console')) == (b'stdout:console\r\n', b'stderr:console\r\n')
     finish(start('reject', env | {'LASRECOMP_LOG_FILE': 'x'*300}))
     finish(start('reject', env | {'LASRECOMP_LOG_FILE': str(temporary/'missing/log.txt')}))
@@ -142,10 +142,10 @@ with tempfile.TemporaryDirectory(prefix='windows-logs-', dir=build) as directory
     bare = subprocess.Popen([str(exe), 'bare-gui'], env=env, startupinfo=startup,
                             creationflags=subprocess.CREATE_NO_WINDOW)
     finish(bare)
-    bare_log, = temporary.glob(f'lasrecomp-backup-*-{bare.pid}.log')
+    bare_log, = temporary.glob(f'dkcrrecomp-backup-*-{bare.pid}.log')
     lines = session_lines(bare_log)
     assert lines == ['stdout:bare-gui', 'stderr:bare-gui'], (bare_log.name, lines)
-    assert (temporary/'lasrecomp.log').read_bytes() == bare_log.read_bytes()
+    assert (temporary/'dkcrrecomp.log').read_bytes() == bare_log.read_bytes()
 
     # The alias is live while the newest session runs; pruning leaves older active
     # sessions alone, and an older exit must never replace the newest report.
@@ -153,7 +153,7 @@ with tempfile.TemporaryDirectory(prefix='windows-logs-', dir=build) as directory
     def held(environment=env):
         process = start('hold', environment)
         for _ in range(250):
-            ready = list(temporary.glob(f'lasrecomp-backup-*-{process.pid}.log.ready'))
+            ready = list(temporary.glob(f'dkcrrecomp-backup-*-{process.pid}.log.ready'))
             if ready:
                 return process, Path(str(ready[0])[:-6])
             assert process.poll() is None
@@ -165,16 +165,16 @@ with tempfile.TemporaryDirectory(prefix='windows-logs-', dir=build) as directory
 
     live, live_log = held()
     try:
-        assert (temporary/'lasrecomp.log').read_bytes() == live_log.read_bytes()
+        assert (temporary/'dkcrrecomp.log').read_bytes() == live_log.read_bytes()
         for i in range(8):
             newest = start(f'rotation-{i}'); finish(newest)
         assert live_log.exists(), 'Pruning removed a running session'
-        latest = (temporary/'lasrecomp.log').read_bytes()
+        latest = (temporary/'dkcrrecomp.log').read_bytes()
         assert b'rotation-7' in latest
         release(live, live_log)
-        assert (temporary/'lasrecomp.log').read_bytes() == latest, 'Older exit replaced the latest run'
+        assert (temporary/'dkcrrecomp.log').read_bytes() == latest, 'Older exit replaced the latest run'
         finish(start('prune-completed'))
-        assert len(list(temporary.glob('lasrecomp-backup-*.log'))) == 5
+        assert len(list(temporary.glob('dkcrrecomp-backup-*.log'))) == 5
         assert not live_log.exists()
     finally:
         if live.poll() is None: release(live, live_log)
@@ -184,22 +184,22 @@ with tempfile.TemporaryDirectory(prefix='windows-logs-', dir=build) as directory
     old, old_log = held(fallback_env)
     try:
         finish(start('fallback-newest', fallback_env))
-        latest = (temporary/'lasrecomp.log').read_bytes()
+        latest = (temporary/'dkcrrecomp.log').read_bytes()
         assert b'fallback-newest' in latest
         release(old, old_log)
-        assert (temporary/'lasrecomp.log').read_bytes() == latest
+        assert (temporary/'dkcrrecomp.log').read_bytes() == latest
     finally:
         if old.poll() is None: release(old, old_log)
     # The relaunched game inherits valid handles and must publish on its own;
     # the launcher exits through ExitProcess, without invoking atexit.
     handoff = start('handoff', fallback_env); finish(handoff)
-    handoff_log, = temporary.glob(f'lasrecomp-backup-*-{handoff.pid}.log')
+    handoff_log, = temporary.glob(f'dkcrrecomp-backup-*-{handoff.pid}.log')
     assert session_lines(handoff_log) == ['stdout:handoff', 'stderr:handoff', 'stdout:child-inherited', 'stderr:child-inherited']
-    assert (temporary/'lasrecomp.log').read_bytes() == handoff_log.read_bytes()
-    # Only lasrecomp-backup-*.log files are pruned; other logs (another tool's, unrelated names) are left alone.
-    others=[temporary/f'lasrecomp-{100+i}.log' for i in range(3)] + [temporary/'lasrecomp-custom.log']
+    assert (temporary/'dkcrrecomp.log').read_bytes() == handoff_log.read_bytes()
+    # Only dkcrrecomp-backup-*.log files are pruned; other logs (another tool's, unrelated names) are left alone.
+    others=[temporary/f'dkcrrecomp-{100+i}.log' for i in range(3)] + [temporary/'dkcrrecomp-custom.log']
     for other in others: other.write_text('keep me')
     finish(start('after-others'))
-    assert len(list(temporary.glob('lasrecomp-backup-*.log'))) == 5
+    assert len(list(temporary.glob('dkcrrecomp-backup-*.log'))) == 5
     assert all(other.read_text() == 'keep me' for other in others)
 print('PASS: independent/relaunched writers, live latest log, five backups, active-session protection, exit ordering, fallback, other logs untouched')

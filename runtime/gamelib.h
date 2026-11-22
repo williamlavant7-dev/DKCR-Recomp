@@ -11,13 +11,13 @@
 #include "cpu.h"
 
 #if defined(_WIN32)
-#define GAMELIB_NAME "lasgame.dll"
+#define GAMELIB_NAME "dkcrgame.dll"
 #define GAMELIB_EXPORT __declspec(dllexport)
 #elif defined(__APPLE__)
-#define GAMELIB_NAME "lasgame.dylib"
+#define GAMELIB_NAME "dkcrgame.dylib"
 #define GAMELIB_EXPORT __attribute__((visibility("default")))
 #else
-#define GAMELIB_NAME "lasgame.so"
+#define GAMELIB_NAME "dkcrgame.so"
 #define GAMELIB_EXPORT __attribute__((visibility("default")))
 #endif
 

@@ -3,7 +3,7 @@
 # Launches the installed app with LARECOMP_IOS_PYTEST=1 (runtime/platform/ios.c plat_init: the self-test in
 # ios_python.m imports every package and runs the seed generator on Documents/pytest-seed with
 # {"seed": "pytest", "create-spoiler": true}, then once more into pytest-seed2 and compares the two, then kills a
-# third run a second in), pulls Documents/lasrecomp.log and checks for `[py] selftest ok`, two `generator exit 0`,
+# third run a second in), pulls Documents/dkcrrecomp.log and checks for `[py] selftest ok`, two `generator exit 0`,
 # `second run: … identical` and `kill: ok`;
 # then generates the same seed here (third_party/LAS-Randomizer/venv, PYTHONHASHSEED=0 as the
 # runtime sets it) and compares the two outputs byte for byte - the seed must not depend on the platform.
@@ -25,11 +25,11 @@ xcrun devicectl device process launch --device "$DEVICE" --terminate-existing \
 # (the self-test logs `generator exit` when the generator is done: poll the log for it)
 for i in $(seq 1 60); do
     sleep 2
-    rm -rf "$W/log"; ios fsync --udid="$UDID" --app="$BUNDLE_ID" pull --srcPath=Documents/lasrecomp.log --dstPath="$W/log" >/dev/null 2>&1 || true
-    LOG=$(find "$W/log" -name lasrecomp.log 2>/dev/null | head -1)
+    rm -rf "$W/log"; ios fsync --udid="$UDID" --app="$BUNDLE_ID" pull --srcPath=Documents/dkcrrecomp.log --dstPath="$W/log" >/dev/null 2>&1 || true
+    LOG=$(find "$W/log" -name dkcrrecomp.log 2>/dev/null | head -1)
     [ -n "$LOG" ] && grep -q "^\[py\] kill:\|^\[py\] generator exit [1-9]\|working directory MOVED\|^\[py\] selftest FAILED" "$LOG" && break
 done
-[ -n "${LOG:-}" ] || { echo "no Documents/lasrecomp.log on the device"; exit 1; }
+[ -n "${LOG:-}" ] || { echo "no Documents/dkcrrecomp.log on the device"; exit 1; }
 grep "^\[py\]" "$LOG"
 grep -q "^\[py\] selftest ok" "$LOG" || { echo "FAIL: self-test"; exit 1; }
 # (a script as a process, runtime/platform/ios_pyproc.py: its working directory, environment and children its own)

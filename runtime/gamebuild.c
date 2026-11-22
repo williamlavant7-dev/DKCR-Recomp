@@ -319,7 +319,7 @@ static bool find_tools(Tools *t) {
     if (b > s) s = b;
     if (s) *s = 0;
 #ifdef _WIN32
-    if (!rt_resource("lasrecomp.dll.a", "build/lasrecomp.dll.a", t->implib, sizeof t->implib)) return false;
+    if (!rt_resource("dkcrrecomp.dll.a", "build/dkcrrecomp.dll.a", t->implib, sizeof t->implib)) return false;
     t->zig_rt[0] = 0;
     if (t->zig && rt_resource("zig" SEP "rt" SEP "link.rsp", NULL, t->zig_rt, sizeof t->zig_rt)) {
         char *s = strrchr(t->zig_rt, '/'), *b = strrchr(t->zig_rt, '\\');
@@ -352,13 +352,13 @@ bool gamebuild_available(void) {
 #define LLD_HOST LLD_ARCH "-linux"
 #endif
 
-#define KIT_APP "Payload/LAS Recomp.app"
+#define KIT_APP "Payload/DKCR Recomp.app"
 #define KIT_LLD "lld/" LLD_HOST
 #define KIT_LD KIT_LLD "/bin/lld" PLAT_EXE_SUFFIX
 
 ZipReader *gamebuild_ios_kit_open(const char *kit, char *why, size_t why_size) {
     Tools t;
-    if (!find_tools(&t) || !t.zig) { snprintf(why, why_size, "the game code builder is missing from this copy of LAS Recomp"); return NULL; }
+    if (!find_tools(&t) || !t.zig) { snprintf(why, why_size, "the game code builder is missing from this copy of DKCR Recomp"); return NULL; }
     if (!kit || !*kit) { snprintf(why, why_size, "choose the iOS kit (.laskit) of this release"); return NULL; }
     struct stat st;
     if (stat(kit, &st) != 0) { snprintf(why, why_size, "the iOS kit isn't there any more: %s", kit); return NULL; }
@@ -447,7 +447,7 @@ static bool unpack_kit(ZipReader *z, char *dir, size_t dir_size, void (*progress
 
 // the tools taken out of the kit (gamebuild_ios_kit_open's)
 static bool find_ios_tools(Tools *t, ZipReader *kit, void (*progress)(double, const char *), char *why, size_t why_size) {
-    if (!find_tools(t) || !t->zig) { snprintf(why, why_size, "the game code builder is missing from this copy of LAS Recomp"); return false; }
+    if (!find_tools(t) || !t->zig) { snprintf(why, why_size, "the game code builder is missing from this copy of DKCR Recomp"); return false; }
     t->ios = true;
     if (!kit) { snprintf(why, why_size, "no iOS kit"); return false; }
     char dir[1100];
@@ -471,7 +471,7 @@ static bool find_ios_tools(Tools *t, ZipReader *kit, void (*progress)(double, co
 static bool find_ios_tools(Tools *t, struct ZipReader *kit, void (*progress)(double, const char *), char *why,
                            size_t why_size) {
     (void)t, (void)kit, (void)progress;
-    snprintf(why, why_size, "the iOS export isn't in this build of LAS Recomp");
+    snprintf(why, why_size, "the iOS export isn't in this build of DKCR Recomp");
     return false;
 }
 #endif
@@ -653,7 +653,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     }
     Tools t;
     if (ios ? !find_ios_tools(&t, o->ios_kit, o->progress, why, why_size) : !find_tools(&t)) {
-        if (!ios) snprintf(why, why_size, LN("the game code builder is missing from this copy of LAS Recomp"));
+        if (!ios) snprintf(why, why_size, LN("the game code builder is missing from this copy of DKCR Recomp"));
         return false;
     }
 #ifdef __ANDROID__

@@ -490,12 +490,12 @@ void plat_thread_realtime(uint64_t period_ns) {
 int plat_thread_realtime_check(uint64_t period_ns) { (void)period_ns; return -1; }
 
 // ---- process
-// Started from a desktop (the AppImage) there is no terminal: stdout / stderr go to lasrecomp.log in the data folder
+// Started from a desktop (the AppImage) there is no terminal: stdout / stderr go to dkcrrecomp.log in the data folder
 // (runtime/paths.h; rt_paths_init runs later, so the same rule is applied here), with five backups (posix_log.h).
 static char g_log_path[1024];
 
 #ifdef __ANDROID__
-// stdout / stderr go through a pipe: each line to logcat (tag LASRecomp) and to lasrecomp.log in the data folder, which
+// stdout / stderr go through a pipe: each line to logcat (tag LASRecomp) and to dkcrrecomp.log in the data folder, which
 // players attach to bug reports as on the desktop
 static int g_log_fd = -1;
 static void *log_pump(void *arg) {
@@ -564,10 +564,10 @@ bool plat_cli_tty(void) { return g_cli_isatty && g_log_path[0]; }
 static void require_cpu(void) {
     __builtin_cpu_init();
     if (__builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma") && __builtin_cpu_supports("bmi2")) return;
-    static const char msg[] = "LAS Recomp needs a CPU with AVX2 (Intel Haswell / 2013 or newer, AMD Excavator / Zen or "
+    static const char msg[] = "DKCR Recomp needs a CPU with AVX2 (Intel Haswell / 2013 or newer, AMD Excavator / Zen or "
                               "newer).";
     fprintf(stderr, "FATAL: %s\n", msg);
-    if (g_log_path[0]) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "LAS Recomp", msg, NULL);
+    if (g_log_path[0]) SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKCR Recomp", msg, NULL);
     exit(1);
 }
 #else
@@ -703,7 +703,7 @@ void plat_exec(char *const argv[]) {
 // ---- diagnostics
 // Exported symbols only (the Makefile links with -rdynamic); frames in the generated code are left to the caller,
 // which maps them to guest functions (runtime/dispatch.c). Static runtime functions come out as the nearest guest
-// function, so backtrace lines also give the offset in the executable (addr2line -fe lasrecomp <offset>).
+// function, so backtrace lines also give the offset in the executable (addr2line -fe dkcrrecomp <offset>).
 const char *plat_symbol(uint64_t pc, uint64_t *offset) {
     Dl_info di = {0};
     if (!dladdr((void *)(uintptr_t)pc, &di) || !di.dli_sname) return NULL;
@@ -728,7 +728,7 @@ void plat_fatal_notice(void) {
         if (rt_fatal_is_driver() && android_driver_error_dialog(text)) return;
     }
 #endif
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "LAS Recomp", text, NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKCR Recomp", text, NULL);
 }
 
 bool plat_module_name(uint64_t pc, char *out, size_t n) {
@@ -769,7 +769,7 @@ void plat_print_backtrace(void) {
         if (!s && ours) s = rt_host_fn_name(pc, &off);
         const char *mod = di.dli_fname ? (strrchr(di.dli_fname, '/') ? strrchr(di.dli_fname, '/') + 1 : di.dli_fname) : "?";
         uint64_t moff = pc - (uint64_t)(uintptr_t)di.dli_fbase;
-        if (s && ours) fprintf(stderr, "  #%-2d %016llx %s+%llx (lasrecomp+%llx)\n", i, (unsigned long long)pc, s,
+        if (s && ours) fprintf(stderr, "  #%-2d %016llx %s+%llx (dkcrrecomp+%llx)\n", i, (unsigned long long)pc, s,
                                (unsigned long long)off, (unsigned long long)moff);
         else if (s) fprintf(stderr, "  #%-2d %016llx %s+%llx (%s)\n", i, (unsigned long long)pc, s, (unsigned long long)off, mod);
         else fprintf(stderr, "  #%-2d %016llx %s+%llx\n", i, (unsigned long long)pc, mod, (unsigned long long)moff);

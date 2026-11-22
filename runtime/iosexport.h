@@ -27,7 +27,7 @@ bool iosexport_available(const char *kit, char *why, size_t why_size);
 // or their contents, or nested). The build's files go to <data root>/cache/ios-build; game_dir isn't written to.
 // false: why says what went wrong (details in the log).
 bool iosexport_run(const char *game_dir, const IosExportOpts *o, char *why, size_t why_size);
-// Where the start screen suggests saving it (~/Downloads/LAS Recomp-<version>-iOS.ipa)
+// Where the start screen suggests saving it (~/Downloads/DKCR Recomp-<version>-iOS.ipa)
 void iosexport_default_path(char *out, size_t n);
 // The iOS build's folder in the data root (its exefs copy, .gamebuild/, library): what "Clear build cache" removes
 // along with the desktop's.

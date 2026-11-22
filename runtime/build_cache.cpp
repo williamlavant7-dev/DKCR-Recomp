@@ -161,7 +161,7 @@ std::unique_ptr<BuildCache> acquire(const char *game_dir) {
     return c;
 }
 bool library_name(const std::string &s) {
-    return s == "lasgame.dll" || s == "lasgame.so" || s == "lasgame.dylib" ||
+    return s == "dkcrgame.dll" || s == "dkcrgame.so" || s == "dkcrgame.dylib" ||
            s == "lasgame-ios.dylib";  // (the iOS library built on any desktop, runtime/gamebuild.c GAMEBUILD_IOS)
 }
 void recover(BuildCache *c) {

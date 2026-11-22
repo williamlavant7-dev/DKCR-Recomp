@@ -97,7 +97,7 @@ static bool writable(const char *dir) {
 
 static void fail(const char *msg) {
     fprintf(stderr, "%s\n", msg);
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "LAS Recomp", msg, NULL);
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKCR Recomp", msg, NULL);
     exit(1);
 }
 
@@ -345,14 +345,14 @@ void rt_paths_init(void) {
         while (pointer_root(g_home, ptr, sizeof ptr)) {  // another folder chosen on the start screen
             if (ptr[0] && is_dir(ptr) && writable(ptr)) { snprintf(root, sizeof root, "%s", ptr); break; }
             char msg[1400];
-            if (!ptr[0]) snprintf(msg, sizeof msg, "LAS Recomp's data folder isn't available any more.\n\nIf it's on a "
+            if (!ptr[0]) snprintf(msg, sizeof msg, "DKCR Recomp's data folder isn't available any more.\n\nIf it's on a "
                                   "drive that isn't connected, connect it and try again.");  // (iOS: no path to show)
-            else snprintf(msg, sizeof msg, "LAS Recomp's data folder isn't available:\n%s\n\nIf it's on a drive that isn't "
+            else snprintf(msg, sizeof msg, "DKCR Recomp's data folder isn't available:\n%s\n\nIf it's on a drive that isn't "
                           "connected, connect it and try again.", ptr);
             const SDL_MessageBoxButtonData b[] = {{SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 0, "Try again"},
                                                   {0, 1, "Use the default folder"},
                                                   {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 2, "Quit"}};
-            const SDL_MessageBoxData box = {SDL_MESSAGEBOX_WARNING, NULL, "LAS Recomp", msg, 3, b, NULL};
+            const SDL_MessageBoxData box = {SDL_MESSAGEBOX_WARNING, NULL, "DKCR Recomp", msg, 3, b, NULL};
             int k = 2;
             if (!SDL_ShowMessageBox(&box, &k)) fprintf(stderr, "%s\n", msg);
             if (k == 2) exit(1);
@@ -367,11 +367,11 @@ void rt_paths_init(void) {
     char msg[1400];
     if (!is_dir(root) || !writable(root) || chdir(root) != 0) {
 #ifdef _WIN32
-        snprintf(msg, sizeof msg, "LAS Recomp can't write to its folder:\n%s\n\nIt keeps game files, saves and seeds "
-                 "next to the program. Move the \"LAS Recomp\" folder somewhere you can write to (e.g. Documents or "
+        snprintf(msg, sizeof msg, "DKCR Recomp can't write to its folder:\n%s\n\nIt keeps game files, saves and seeds "
+                 "next to the program. Move the \"DKCR Recomp\" folder somewhere you can write to (e.g. Documents or "
                  "Desktop, not Program Files) and start it again.", root);
 #else
-        snprintf(msg, sizeof msg, "LAS Recomp can't write to its data folder:\n%s", root);
+        snprintf(msg, sizeof msg, "DKCR Recomp can't write to its data folder:\n%s", root);
 #endif
         fail(msg);
     }
@@ -391,7 +391,7 @@ bool rt_resource(const char *name, const char *dev_rel, char *out, size_t n) {
     }
     if (dev_rel) {
         snprintf(c[2], sizeof c[2], "%s" SEP "%s", g_start, dev_rel);
-        snprintf(c[3], sizeof c[3], "%s" SEP ".." SEP "%s", g_exe_dir, dev_rel);  // build/lasrecomp -> repo root
+        snprintf(c[3], sizeof c[3], "%s" SEP ".." SEP "%s", g_exe_dir, dev_rel);  // build/dkcrrecomp -> repo root
     }
     for (int i = 0; i < 4; i++)
         if (c[i][0] && exists(c[i])) return (size_t)snprintf(out, n, "%s", c[i]) < n;  // (as is: a venv python must stay a link)
@@ -524,7 +524,7 @@ static bool has_entries(const char *dir) {
     return false;
 }
 
-// LAS Recomp's own data: its settings (written by every PLAY since Beta 3), a move's note, or saves with seeds or game
+// DKCR Recomp's own data: its settings (written by every PLAY since Beta 3), a move's note, or saves with seeds or game
 // files beside them. One of DATA_ENTRIES alone is not (#736): another program's cache/, fonts/ or save/ was taken as
 // ours, used as the data folder with no Move offered, and taken along by a later move.
 static bool has_own_data(const char *dir) {
@@ -552,11 +552,11 @@ static bool empty_dir(const char *dir) {
     bool empty = true;
     while (empty && (e = readdir(d))) {
         const char *n = e->d_name;
-        size_t k = strlen(n);  // (LAS Recomp's own logs too - a start there before: logs stay where they are, and an
-                               //  SD card's app folder on Android held one, so the data went into "LAS Recomp" in it)
+        size_t k = strlen(n);  // (DKCR Recomp's own logs too - a start there before: logs stay where they are, and an
+                               //  SD card's app folder on Android held one, so the data went into "DKCR Recomp" in it)
         empty = !strcmp(n, ".") || !strcmp(n, "..") || !strcmp(n, ".DS_Store") || !strcmp(n, ".localized") ||
                 !strcmp(n, "desktop.ini") || !strcmp(n, "Thumbs.db") ||
-                (!strncmp(n, "lasrecomp", 9) && k > 4 && !strcmp(n + k - 4, ".log"));
+                ((!strncmp(n, "lasrecomp", 9) || !strncmp(n, "dkcrrecomp", 10)) && k > 4 && !strcmp(n + k - 4, ".log"));
     }
     closedir(d);
     return empty;
@@ -582,7 +582,7 @@ static unsigned long long entries_size(const char *dir) {
     return n;
 }
 
-// LAS Recomp's data (an unfinished copy too), or nothing yet
+// DKCR Recomp's data (an unfinished copy too), or nothing yet
 static bool usable_dir(const char *dir) {
     char p[1100];
     join(p, sizeof p, dir, MARK_PARTIAL);
@@ -597,12 +597,12 @@ void rt_data_target(const char *picked, RtDataTarget *t) {
         snprintf(t->refuse, sizeof t->refuse, LN("That folder can't be opened."));
         return;
     }
-    // the folder itself when it's empty, LAS Recomp's data, or the platform's folder; otherwise a "LAS Recomp"
+    // the folder itself when it's empty, DKCR Recomp's data, or the platform's folder; otherwise a "DKCR Recomp"
     // folder in it
     if (same_dir(r, g_home) || usable_dir(r)) snprintf(t->path, sizeof t->path, "%s", r);
-    else join(t->path, sizeof t->path, r, "LAS Recomp");
+    else join(t->path, sizeof t->path, r, "DKCR Recomp");
     join(p, sizeof p, t->path, MARK_PARTIAL);
-    // (the platform's folder is LAS Recomp's own: anything of ours in it is data)
+    // (the platform's folder is DKCR Recomp's own: anything of ours in it is data)
     t->has_data = (same_dir(t->path, g_home) ? has_entries(t->path) : has_own_data(t->path)) && !exists(p);
     t->bytes = entries_size(g_root);
     t->free = free_space(r);
@@ -613,7 +613,7 @@ void rt_data_target(const char *picked, RtDataTarget *t) {
     else if (within(t->path, root)) snprintf(t->refuse, sizeof t->refuse, LN("That folder is inside the data folder."));
     else if (within(root, t->path)) snprintf(t->refuse, sizeof t->refuse, LN("That folder holds the data folder."));
     else if (in_app(r)) snprintf(t->refuse, sizeof t->refuse, LN("That folder is inside the app."));
-    else if (!writable(r)) snprintf(t->refuse, sizeof t->refuse, LN("LAS Recomp can't write to that folder."));
+    else if (!writable(r)) snprintf(t->refuse, sizeof t->refuse, LN("DKCR Recomp can't write to that folder."));
     else if (!same_dir(t->path, g_home) && !usable_dir(t->path))
         snprintf(t->refuse, sizeof t->refuse, LN("Choose an empty folder."));
 }
@@ -792,7 +792,7 @@ static bool prepare_target(const char *to, char *err, size_t n) {
     char p[1100];
     mkdirs(to);
     if (!is_dir(to) || !writable(to)) {
-        snprintf(err, n, LN("LAS Recomp can't write to %s."), to);
+        snprintf(err, n, LN("DKCR Recomp can't write to %s."), to);
         return false;
     }
     join(p, sizeof p, to, MARK_PARTIAL);
@@ -824,7 +824,7 @@ bool rt_data_move(const char *to, void (*progress)(int step, double frac), char 
     }
     if (has_entries(abs_to)) {  // (never merged into what's there: another program's cache/ either)
         bool ours = same_dir(abs_to, g_home) || has_own_data(abs_to);
-        snprintf(err, n, "%s", ours ? LN("That folder already has LAS Recomp data.") : LN("Choose an empty folder."));
+        snprintf(err, n, "%s", ours ? LN("That folder already has DKCR Recomp data.") : LN("Choose an empty folder."));
         return false;
     }
     SDL_SetAtomicInt(&g_move_cancel, 0);

@@ -11,7 +11,7 @@ GUARD = '[main] LARECOMP_NO_LAUNCHER is set: not showing the start screen - exit
 
 
 def check(app):
-    exe = Path(app).resolve() / 'Contents/MacOS/lasrecomp'
+    exe = Path(app).resolve() / 'Contents/MacOS/dkcrrecomp'
     with tempfile.TemporaryDirectory(prefix='las-macos-smoke-') as scratch:
         root = Path(scratch)
         env = {k: v for k, v in os.environ.items()
@@ -24,7 +24,7 @@ def check(app):
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                                 errors='replace', timeout=20)
         output = result.stdout
-        log = root / 'lasrecomp.log'  # macOS redirects a bundled executable's output here.
+        log = root / 'dkcrrecomp.log'  # macOS redirects a bundled executable's output here.
         if log.is_file():
             output += log.read_text(errors='replace')
         print(output, end='')

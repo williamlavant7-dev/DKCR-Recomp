@@ -2,7 +2,7 @@
 # Dynamic resolution measurement: one muted run through outdoor areas with Dynamic on, walking back and forth in each
 # (9 warps, 30 s apart, ~5.5 min), then the summary (tools/dynres_log.py): render-scale changes, hitches, fps.
 #   tools/dynres_run.sh <binary> <tag> [window WxH] [extra settings lines...]   (log: build/dyn_<tag>/run.log)
-# e.g. tools/dynres_run.sh build/lasrecomp after 7680x4320 "antialias = smaa". LARECOMP_HIDDEN=1 for a window larger
+# e.g. tools/dynres_run.sh build/dkcrrecomp after 7680x4320 "antialias = smaa". LARECOMP_HIDDEN=1 for a window larger
 # than the screen (the drawable keeps its size). SAVE_FROM: the save_0 folder to start from (a scratch copy is played).
 # Timing-sensitive: nothing else should use the GPU meanwhile.
 cd "$(dirname "$0")/.."

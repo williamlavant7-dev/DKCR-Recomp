@@ -1,10 +1,10 @@
-// Where LAS Recomp keeps its files (runtime/paths.c).
+// Where DKCR Recomp keeps its files (runtime/paths.c).
 //
 // Data root: everything the app writes or the user brings - extracted/ (game files), rando/ (seeds), save/,
 // cache/ (shaders / pipelines), fonts/ (imported), larecomp.ini. rt_paths_init() picks it and makes it the
 // working directory, so the rest of the runtime opens those by their relative names. In order:
 //   1. LARECOMP_DATA_ROOT (tests, scratch installs)
-//   2. dev / portable mode: the starting directory already has extracted/ (a source checkout: `./build/lasrecomp
+//   2. dev / portable mode: the starting directory already has extracted/ (a source checkout: `./build/dkcrrecomp
 //      extracted`, the test scripts) - used as is
 //   3. the folder named in data_root.txt in the platform's folder (4), chosen on the start screen (never inside the
 //      app); asks to try again / use the default when it's missing (a drive not connected)
@@ -35,11 +35,11 @@ bool rt_data_root_early(char *out, size_t n);
 // Choosing another data folder (the start screen). NULL = it can be changed; else why not (rules 1 / 2).
 const char *rt_data_root_fixed(void);
 typedef struct {
-    char path[1100];               // where the data would go: the folder picked, or a "LAS Recomp" folder in it
+    char path[1100];               // where the data would go: the folder picked, or a "DKCR Recomp" folder in it
                                    // when it holds other things
     unsigned long long bytes;      // the data now (saves, seeds, settings, fonts, caches, game files)
     unsigned long long need, free; // space a move needs there (little on the same drive: hard links), space there
-    bool has_data;                 // LAS Recomp data already there: used as is, not moved into
+    bool has_data;                 // DKCR Recomp data already there: used as is, not moved into
     char refuse[160];              // why it can't be the data folder ("" = it can)
 } RtDataTarget;
 void rt_data_target(const char *picked, RtDataTarget *t);
