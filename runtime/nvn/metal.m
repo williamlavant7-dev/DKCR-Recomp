@@ -38,6 +38,8 @@ static id<MTLDevice> dev;
 static id<MTLCommandQueue> queue;
 static CAMetalLayer *layer;
 static SDL_Window *window;
+// (video recording, runtime/recorder.h: the window's size. Frames aren't captured on Metal yet: Windows only for now)
+void renderer_window_size(int *w, int *h) { *w = *h = 0; if (window) SDL_GetWindowSizeInPixels(window, w, h); }
 static atomic_bool ui_ready;
 static id<MTLRenderPipelineState> present_pipe;
 static id<MTLSamplerState> present_sampler;

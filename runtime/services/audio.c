@@ -8,6 +8,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "../recorder.h"
 #include "../hle.h"
 #include "../settings.h"
 #include "../ipc.h"
@@ -689,6 +690,7 @@ static void *renderer_tick(void *arg) {
         }
         pthread_mutex_unlock(&r->lock);
         if (r->stream) { apply_gain(r->stream); SDL_PutAudioStreamData(r->stream, out, frame_bytes); }
+        if (r->state == 0) recorder_audio(0, out, (uint32_t)frame_bytes, REC_AUDIO_F32, r->out_ch, (int)r->sample_rate);
         if (r->wav && r->state == 0 && r->wav_ch == r->out_ch) {  // (the channel count the file was started with)
             fwrite(out, 1, frame_bytes, r->wav);
             r->wav_bytes += frame_bytes;
@@ -1182,6 +1184,7 @@ static void *audout_thread(void *arg) {
         pthread_mutex_unlock(&a->lock);
         if (!size) { struct timespec ts = {0, 1000000}; nanosleep(&ts, NULL); continue; }
         uint64_t frames = size / (2 * ch);
+        if (data) recorder_audio(1, (const void *)(uintptr_t)data, (uint32_t)size, REC_AUDIO_S16, (int)ch, (int)(a->rate ? a->rate : 48000));
         if (a->stream) {
             apply_gain(a->stream);
             if (data) SDL_PutAudioStreamData(a->stream, (const void *)(uintptr_t)data, (int)size);

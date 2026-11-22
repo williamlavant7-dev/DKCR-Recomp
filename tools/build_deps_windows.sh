@@ -2,7 +2,10 @@
 # make deps-windows (MSYS2 UCRT64 shell): what the shipped Windows build links against instead of MSYS2's packages,
 # built from pinned sources into build/deps-win. MSYS2's FFmpeg is a GPLv3 build (x264, x265, xvid, ...); the
 # release uses an LGPL-only FFmpeg with just what the game's movies need - WebM: VP9 video + Vorbis audio, plus
-# VP8 / Opus / H.264 / AAC in WebM or MP4 (the same configuration as tools/build_deps_macos.sh) - and swscale.
+# VP8 / Opus / H.264 / AAC in WebM or MP4 (the same configuration as tools/build_deps_macos.sh) - and swscale. Video
+# recording (runtime/recorder.c) adds the MP4 muxer, AAC and MPEG-4 part 2 encoders and Windows' Media Foundation
+# H.264 encoder (the GPU's hardware encoder through Windows; nothing extra to install). NVENC / AMF need their header
+# packages here and aren't in it yet: the recorder takes Media Foundation where they're missing.
 # SDL3 (zlib licence) and the compiler runtime DLLs still come from MSYS2.
 # Needs: the packages from tools/setup_windows.ps1 (clang, make, nasm). Skipped when its output exists
 # (delete build/deps-win to redo). FFmpeg stores its configure line (with --prefix) in the DLLs, so it is configured
@@ -30,7 +33,8 @@ if [ ! -f "$P/lib/libavcodec.dll.a" ]; then
         --enable-shared --disable-static \
         --disable-autodetect --disable-programs --disable-doc --disable-network --disable-avdevice --disable-avfilter \
         --disable-swresample --disable-everything \
-        --enable-protocol=file --enable-demuxer=matroska,mov \
+        --enable-protocol=file --enable-demuxer=matroska,mov --enable-muxer=mp4 \
+        --enable-mediafoundation --enable-encoder=h264_mf,mpeg4,aac \
         --enable-decoder=vp9,vp8,vorbis,opus,h264,aac --enable-parser=vp9,vp8,vorbis,opus,h264,aac \
         && make -j"$JOBS" && rm -rf "$S/ffmpeg-root" && make install DESTDIR="$S/ffmpeg-root")
     cp -R "$S/ffmpeg-root$NEUTRAL"/. "$P"/

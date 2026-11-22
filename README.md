@@ -20,12 +20,13 @@ your own game files, and runs with its graphics on Vulkan.
 - Boots to the title screen, the world map and the levels; plays at 60 fps on a modern PC.
 - Controllers through SDL 3, including DualSense and Xbox controllers.
 - Saves, the HUD and the menus.
+- Video recording: **F8** starts and stops it (or Settings > Recording). Videos (MP4, with sound, without the menu)
+  go to the `recordings` folder; quality, frame rate and sound are in the Recording tab.
 
 Known issues:
 - Some objects can pop in for a moment the first time a level starts, while its shaders are prepared. It gets better
   the more you play: prepared shaders are kept in the `cache` folder.
 - Only Windows is tested. The macOS, Linux, Android and iOS code from LAS Recomp is still here, renamed but untested.
-- No video recording yet (planned).
 
 ## System requirements
 

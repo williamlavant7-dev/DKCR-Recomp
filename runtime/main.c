@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "hle.h"
 #include "kernel.h"
+#include "recorder.h"
 
 const char *g_romfs_dir;
 
@@ -176,10 +177,11 @@ void backend_quit(void);              // quitting: the render thread stopped, th
 static void reboot_idle(void) {  // (main thread, while guest threads stop) keep the window alive
     SDL_Event e;
     while (SDL_PollEvent(&e))
-        if (e.type == SDL_EVENT_QUIT) { LOG("window closed\n"); backend_quit(); exit(0); }
+        if (e.type == SDL_EVENT_QUIT) { LOG("window closed\n"); recorder_stop(); backend_quit(); exit(0); }  // (a recording is finished first: an MP4 cut off has no index)
 }
 
 static void teardown(void) {
+    recorder_stop();  // (a reboot or "Title screen": the video so far is saved)
     uint64_t t0 = plat_now_ns();
     kernel_stop_threads(reboot_idle);
 #ifdef __ANDROID__

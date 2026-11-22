@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../recorder.h"
 #include "../hle.h"
 #include "../nvn/nvn.h"
 #include "../nvn/renderer.h"
@@ -789,6 +790,12 @@ void input_frame(uint64_t frame) {
     }
     extern void watch_arm(void);
     watch_arm();
+    {   // LARECOMP_RECORD_AT=<frame>:<frames> (test): a video recording from that frame, that many frames long
+        static long at = -1, len;
+        if (at < 0) { const char *e = getenv("LARECOMP_RECORD_AT"); at = e ? atol(e) : 0; len = e && strchr(e, ':') ? atol(strchr(e, ':') + 1) : 600; }
+        if (at && (long)frame == at) recorder_start();
+        if (at && (long)frame == at + len) recorder_stop();
+    }
     host_test_frame(frame);
     const char *spec = getenv("LARECOMP_INPUT");
     if (!spec) return;

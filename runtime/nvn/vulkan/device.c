@@ -20,6 +20,7 @@
 #include "../renderer.h"
 #include "../pace.h"
 #include "../shader_prep.h"
+#include "../../recorder.h"
 #include "../interp.h"
 #include <pthread.h>
 #include <dirent.h>
@@ -1443,6 +1444,55 @@ static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
     image_barrier(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
 }
 
+// ---- video recording (runtime/recorder.h): the window image before the overlay (no menu, no REC dot), copied into
+// one of a few host buffers and handed over once its submission is done - a frame or two later - so the game never
+// waits for it. With every buffer still in flight a frame is left out.
+#define REC_BUFS 3
+static struct { VkBuffer buf; VmaAllocation mem; uint8_t *ptr; uint64_t cap, seq, t_ns; uint32_t w, h; bool pending; } rec_buf[REC_BUFS];
+
+void renderer_window_size(int *w, int *h) { *w = (int)g_vk.sc_phys.width, *h = (int)g_vk.sc_phys.height; }
+
+static void rec_collect(void) {
+    bool bgr = g_vk.sc_format == VK_FORMAT_B8G8R8A8_UNORM || g_vk.sc_format == VK_FORMAT_B8G8R8A8_SRGB;
+    uint64_t done = vk_completed_seq();
+    for (int i = 0; i < REC_BUFS; i++)
+        if (rec_buf[i].pending && rec_buf[i].seq <= done) {
+            rec_buf[i].pending = false;
+            recorder_video_frame(rec_buf[i].ptr, rec_buf[i].w, rec_buf[i].h, rec_buf[i].w * 4, bgr, rec_buf[i].t_ns);
+        }
+}
+
+static void rec_capture(void) {
+    rec_collect();
+    if (!cur_frame.ok || g_vk.sc_quarter || !recorder_wants_frame()) return;
+    int i = 0;
+    while (i < REC_BUFS && rec_buf[i].pending) i++;
+    if (i == REC_BUFS) return;
+    uint32_t w = g_vk.sc_phys.width, h = g_vk.sc_phys.height;
+    uint64_t size = (uint64_t)w * h * 4;
+    if (size > rec_buf[i].cap) {
+        if (rec_buf[i].buf) vmaDestroyBuffer(g_vk.vma, rec_buf[i].buf, rec_buf[i].mem);  // (not pending: its copy is done)
+        VkBufferCreateInfo bi = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO, .size = size, .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT};
+        VmaAllocationCreateInfo ai = {.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST,
+                                      .flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT};
+        VmaAllocationInfo info;
+        if (vmaCreateBuffer(g_vk.vma, &bi, &ai, &rec_buf[i].buf, &rec_buf[i].mem, &info) != VK_SUCCESS) {
+            rec_buf[i].buf = VK_NULL_HANDLE, rec_buf[i].cap = 0;
+            return;
+        }
+        rec_buf[i].ptr = info.pMappedData, rec_buf[i].cap = size;
+    }
+    vk_frame_suspend();
+    VkCommandBuffer cb = vk_cmd();
+    image_barrier(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL);
+    VkBufferImageCopy rg = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1}, .imageExtent = {w, h, 1}};
+    rec_CmdCopyImageToBuffer(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, rec_buf[i].buf, 1, &rg);
+    image_barrier(cb, g_vk.sc_images[cur_frame.image], VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL);
+    vk_frame_resume();
+    rec_buf[i].seq = vk_pending_seq(), rec_buf[i].t_ns = plat_now_ns(), rec_buf[i].w = w, rec_buf[i].h = h;
+    rec_buf[i].pending = true;
+}
+
 // End rendering into the window image and present it. shot_path: also save the window image as PNG.
 void vk_frame_end(const char *shot_path) {
     if (!cur_frame.ok) return;
@@ -1643,6 +1693,7 @@ static void ip_present_mid(TexBackend *b) {  // an in-between in b (the game's i
     if (vk_frame_begin(black)) {
         VkCommandBuffer cb = vk_cmd();
         vk_present_draw(cb, b, ip_place.vx, ip_place.vy, ip_place.vw, ip_place.vh, ip_place.pv);
+        rec_capture();
         menu_render((void *)cb, g_vk.sc_extent.width, g_vk.sc_extent.height);
         ip_space();
         vk_frame_end(NULL);
@@ -1833,6 +1884,7 @@ void backend_present_now(NvnTexture *t, uint64_t frame) {
         static long menu_at = -1;
         if (menu_at < 0) menu_at = getenv("LARECOMP_MENU_AT") ? atol(getenv("LARECOMP_MENU_AT")) : 0;
         if (menu_at && (long)frame + 1 == menu_at) { extern void menu_test_open(void); menu_test_open(); }
+        rec_capture();  // (video recording: the image before the overlay)
         // (ImGui records through vk_overlay_begin / vk_overlay_end, when it draws anything)
         menu_render((void *)cb, g_vk.sc_extent.width, g_vk.sc_extent.height);
         pp_mark(PP_OVERLAY);

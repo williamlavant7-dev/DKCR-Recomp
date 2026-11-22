@@ -55,6 +55,9 @@ Settings g_settings = {
     .volume = 1.0f,
     .reverb = true,
     .movie_audio = true,
+    .rec_quality = 1,
+    .rec_audio = true,
+    .rec_dot = true,
     .rumble = true,
     .rumble_strength = 100,
     .controller_light = true,
@@ -219,6 +222,10 @@ void settings_load(void) {
         }
         else if (!strcmp(key, "reverb")) g_settings.reverb = atoi(val) != 0;
         else if (!strcmp(key, "movie_audio")) g_settings.movie_audio = atoi(val) != 0;
+        else if (!strcmp(key, "record_quality")) g_settings.rec_quality = !strcmp(val, "low") ? 0 : !strcmp(val, "high") ? 2 : 1;
+        else if (!strcmp(key, "record_fps")) g_settings.rec_fps = atoi(val) == 30;
+        else if (!strcmp(key, "record_sound")) g_settings.rec_audio = atoi(val) != 0;
+        else if (!strcmp(key, "record_dot")) g_settings.rec_dot = atoi(val) != 0;
         else if (!strcmp(key, "show_fps")) {  // (older files: 0 / 1, and 1 was the top right)
             static const char *const corners[] = {"off", "top_left", "top_right", "bottom_left", "bottom_right"};
             g_settings.show_fps = atoi(val) ? FPS_TOP_RIGHT : FPS_OFF;
@@ -336,6 +343,13 @@ void settings_save(void) {
     fprintf(f, "audio_output = %s\n", k_audio_out_keys[g_settings.audio_out == AUDIO_OUT_51]);
     fprintf(f, "reverb = %d\n", g_settings.reverb);
     fprintf(f, "movie_audio = %d\n", g_settings.movie_audio);
+    {
+        static const char *const q[] = {"low", "medium", "high"};
+        fprintf(f, "record_quality = %s\n", q[g_settings.rec_quality < 0 || g_settings.rec_quality > 2 ? 1 : g_settings.rec_quality]);
+    }
+    fprintf(f, "record_fps = %d\n", g_settings.rec_fps == 1 ? 30 : 60);
+    fprintf(f, "record_sound = %d\n", g_settings.rec_audio);
+    fprintf(f, "record_dot = %d\n", g_settings.rec_dot);
     {
         static const char *const corners[] = {"off", "top_left", "top_right", "bottom_left", "bottom_right"};
         int c = g_settings.show_fps;

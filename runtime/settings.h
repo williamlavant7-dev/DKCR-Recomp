@@ -49,6 +49,10 @@ typedef struct {
     int audio_out;       // AUDIO_OUT_*: speaker layout of the game's sound (runtime/services/audio.c)
     bool reverb;         // room reverb effect
     bool movie_audio;
+    int rec_quality;     // video recording (runtime/recorder.c): 0 Low, 1 Medium, 2 High
+    int rec_fps;         // 0: 60 fps, 1: 30 fps
+    bool rec_audio;      // the game's sound in the recording
+    bool rec_dot;        // the red REC dot in a corner while recording (never in the video)
     bool frame_interp;   // Frame Generation: extra images between the game's frames (runtime/nvn/interp.c)
     bool metal_hud;      // macOS: Apple's Metal Performance HUD over the game (runtime/nvn/metal.m metal_hud_apply)
     int show_fps;        // FPS_*: the frame rate counter's corner (FPS_OFF: none)

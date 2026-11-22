@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "../recorder.h"
 #include "imgui.h"
 #include "i18n.h"
 #include "live_preview.h"
@@ -257,6 +258,10 @@ bool menu_handle_event(const SDL_Event *e) {
         if (!e->key.repeat && (e->key.scancode == SDL_SCANCODE_F1 ||
                                (e->key.scancode == SDL_SCANCODE_ESCAPE && !g_open.load()))) {
             if (!typing) set_open(!g_open.load());  // (Esc with the menu open goes to ImGui below: it cancels a field)
+            return true;
+        }
+        if (!e->key.repeat && e->key.scancode == SDL_SCANCODE_F8 && !typing) {  // (video recording on / off)
+            recorder_toggle();
             return true;
         }
         if (!e->key.repeat && (e->key.scancode == SDL_SCANCODE_F11 ||
@@ -869,6 +874,41 @@ static void tab_audio(void) {
     opt_end();
 }
 
+// Recording (runtime/recorder.h): F8 starts and stops it anywhere; the video goes to the data folder's recordings/
+static void tab_recording(void) {
+    static const char *const qualities[] = {LN("Low"), LN("Medium"), LN("High")};
+    static const char *const rates[] = {LN("60 fps"), LN("30 fps")};
+    opt_begin("##recording", ImGui::GetFontSize() / 34);
+    opt_section("Recording");
+    bool on = recorder_active();
+    opt_button_next();
+    if (opt_action(on ? "Stop recording" : "Start recording", on ? "Recording" : "F8",
+                   "Records the game, without the menu, to the recordings folder. F8 starts and stops it at any time.")) {
+        recorder_toggle();
+        if (recorder_active()) set_open(false);  // (back to the game: the recording starts there)
+    }
+    if (recorder_last_file()[0])
+        opt_action("Last video", recorder_last_file(), "The newest recording in the recordings folder.", false);
+    opt_button_next();
+    if (opt_action("Open recordings folder", "", "Shows your recordings in the file browser.")) {
+        SDL_CreateDirectory("recordings");
+        char url[1200];
+        snprintf(url, sizeof url, "file:///%s/recordings", rt_data_root());
+        for (char *p = url; *p; p++) if (*p == '\\') *p = '/';
+        SDL_OpenURL(url);
+    }
+    opt_section("Options");
+    if (on) opt_disable_next();
+    opt_choice("Quality", &g_settings.rec_quality, qualities, 3, 1,
+               "Higher looks sharper and makes bigger files. Used from the next recording.");
+    if (on) opt_disable_next();
+    opt_choice("Frame rate", &g_settings.rec_fps, rates, 2, 0, "Frames per second in the video. Used from the next recording.");
+    if (on) opt_disable_next();
+    opt_toggle("Record sound", &g_settings.rec_audio, true, "The game's sound in the video. Used from the next recording.");
+    opt_toggle("Recording dot", &g_settings.rec_dot, true, "A red dot in the corner while recording. It is never in the video.");
+    opt_end();
+}
+
 extern "C" void rt_request_reboot(int kind);  // runtime/main.c (rt.h's RT_REBOOT_GAME / RT_REBOOT_TITLE)
 
 // Reset and Quit (the bar's entries): a question over the bar, as Reset to vanilla's (user 2026-11-03). Reset: the game
@@ -1335,14 +1375,14 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float), int o
     if (prelaunch) tabs[ntabs++] = {LN("System"), -1, true};
     static const char *names[] = {LN("Video"), LN("Audio"), LN("Save Editor"), LN("Randomizer"), LN("Warp"),
                                   LN("Cheats"), LN("Gameplay"), LN("Cosmetics"), PLAT_TOUCH ? LN("Controller") : LN("Controls"), LN("Quit"),
-                                  LN("Touch"), LN("General")};
+                                  LN("Touch"), LN("General"), LN("Recording")};
     // General, Controls, Video, Audio (ids stay: test hooks; General leads, after the start screen's System). Quit is
     // the in-game menu bar's own entry. LAS's Save Editor, Randomizer, Warp, Cheats, Gameplay and Cosmetics went with
     // its features (their ids stay unused). Touch screens: Touch after General
 #if PLAT_TOUCH
-    static const int order[] = {11, 10, 8, 0, 1};
+    static const int order[] = {11, 10, 8, 0, 1, 12};
 #else
-    static const int order[] = {11, 8, 0, 1};
+    static const int order[] = {11, 8, 0, 1, 12};
 #endif
     int keep_tab = g_tab;  // (one page alone: the Settings window's tab stays as it was)
     if (only != -1000) tabs[ntabs++] = {names[only], only, true}, g_tab = only;
@@ -1519,6 +1559,7 @@ static void tabs_body(float scale, bool in_game, void (*prelaunch)(float), int o
         case -1: prelaunch(scale); break;
         case 0: tab_display(); break;
         case 1: tab_audio(); break;
+        case 12: tab_recording(); break;
         case 11: general_draw(scale); break;
         case 8: controls_tab_draw(scale); break;
 #if PLAT_TOUCH
@@ -1900,7 +1941,9 @@ static void perf_overlay(float scale) {
 }
 
 // Whether menu_render draws anything: the menu, the keyboard, an overlay (FPS, the touch controls).
-static bool render_needed(bool open, bool kbd, bool touch) { return open || kbd || g_settings.show_fps || touch; }
+static bool render_needed(bool open, bool kbd, bool touch) {
+    return open || kbd || g_settings.show_fps || touch || (recorder_active() && g_settings.rec_dot);
+}
 
 #ifdef __APPLE__
 void menu_render(id<MTLDevice> dev, id<MTLCommandBuffer> cb, id<MTLTexture> target) {
@@ -1955,8 +1998,8 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
             pthread_mutex_unlock(&q_lock);
             int rw = 0, rh = 0;  // (Dynamic: the render size shown with the frame rate)
             if (g_settings.show_fps && g_settings.dyn_res) output_scale_render_size(&rw, &rh);
-            if (!events) snprintf(key, sizeof key, "%.0fx%.0f fps %d %.0f %dx%d", tw, th, (int)g_settings.show_fps,
-                                  g_settings.show_fps ? g_fps_shown : 0.0, rw, rh);
+            if (!events) snprintf(key, sizeof key, "%.0fx%.0f fps %d %.0f %dx%d rec %d", tw, th, (int)g_settings.show_fps,
+                                  g_settings.show_fps ? g_fps_shown : 0.0, rw, rh, recorder_active() && g_settings.rec_dot);
         }
         ImDrawData *dd = ImGui::GetDrawData();
         if (key[0] && g_ov_same >= 3 && !strcmp(key, g_ov_key) && dd && dd->Valid) {
@@ -2034,6 +2077,20 @@ void menu_render(void *cmd, uint32_t target_w, uint32_t target_h) {
                                 ImVec2(right ? 1.0f : 0.0f, bottom ? 1.0f : 0.0f));
         if (g_settings.fps_advanced) perf_overlay(scale);
         else fps_box(scale);
+    }
+
+    if (recorder_active() && g_settings.rec_dot) {  // (the opposite top corner to a top-right frame rate counter)
+        float m = 20 * scale, r = 9 * scale;
+        bool left = g_settings.show_fps == FPS_TOP_RIGHT;
+        ImFont *f = g_font_big ? g_font_big : ImGui::GetFont();
+        float fs = 22 * scale;
+        ImVec2 ts = f->CalcTextSizeA(fs, FLT_MAX, 0, "REC");
+        float x = left ? m : io.DisplaySize.x - m - ts.x - 2.6f * r;
+        ImDrawList *dl = ImGui::GetForegroundDrawList();
+        dl->AddRectFilled(ImVec2(x - 0.6f * r, m - 0.5f * r), ImVec2(x + 2.6f * r + ts.x + 0.4f * r, m + 2.5f * r),
+                          IM_COL32(0, 0, 0, 140), r);
+        dl->AddCircleFilled(ImVec2(x + r, m + r), r, IM_COL32(230, 40, 40, 255));
+        dl->AddText(f, fs, ImVec2(x + 2.4f * r, m + r - ts.y * 0.5f), IM_COL32(255, 255, 255, 255), "REC");
     }
 
     if (touch) touch_draw(ImGui::GetBackgroundDrawList(), io.DisplaySize.x, io.DisplaySize.y, g_font_big ? g_font_big : ImGui::GetFont(),
