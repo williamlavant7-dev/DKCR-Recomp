@@ -41,7 +41,7 @@
   pull request against it (a fix for a released version: `release/<major>.<minor>`). Name the branch
   `type/short-name`: `fix/<issue>-<name>`, `feature/<name>`, `docs/<name>`, `ci/<name>` or `chore/<name>`. Check the
   base branch first: the change you have in mind may already be there. Releases are tagged `v<major>.<minor>.<patch>`
-  (`v0.1.0` is Beta 1).
+  (`v0.1.0` is Beta 1, `v0.2.0` Beta 2).
 
 - **Fix the cause, not the symptom.**
   - Before changing code, find why it happens: the faulting instruction, the value that went wrong and who wrote
