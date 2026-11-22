@@ -949,6 +949,32 @@ static void *worker(void *a) {
     return NULL;
 }
 
+// A draw whose program or pipeline is still building waits for it a little before it is skipped: one the caches
+// already hold (SPIR-V, the driver's pipeline cache: every shader seen on an earlier run) is ready in about a
+// millisecond or a few, and skipping it showed as things popping in for a frame or two on every visit. The waits
+// share a budget per frame, so a first-ever compile still costs skipped draws rather than a hitch. Measured on a
+// scripted run through DKCR's world map into 1-1 with warm caches (RTX 3060): skipped draws outside the level's
+// first-frame burst 637 -> 374 (4 ms) -> 219 (10 ms), with as many slow 2 s stretches; the burst itself (~450
+// programs and pipelines at once, one translator thread) is barely helped. LARECOMP_VK_BUILD_WAIT_MS=<ms> (default
+// 10; 0: never wait).
+uint64_t renderer_present_count(void);
+static bool build_wait(_Atomic int *state) {
+    static int64_t budget = -1;
+    if (budget < 0) {
+        const char *e = getenv("LARECOMP_VK_BUILD_WAIT_MS");
+        budget = (int64_t)((e ? atof(e) : 10.0) * 1e6);
+    }
+    static uint64_t frame = ~0ull;
+    static int64_t spent;
+    uint64_t f = renderer_present_count();
+    if (f != frame) frame = f, spent = 0;
+    uint64_t t0 = plat_now_ns();
+    while (atomic_load(state) == 0 && spent + (int64_t)(plat_now_ns() - t0) < budget)
+        plat_sleep_until_ns(plat_now_ns() + 100000);  // (0.1 ms steps)
+    spent += (int64_t)(plat_now_ns() - t0);
+    return atomic_load(state) == 1;
+}
+
 static bool sync_shaders(void) {
     static int v = -1;
     if (v < 0) v = getenv("LARECOMP_SYNC_SHADERS") != NULL;
@@ -6983,6 +7009,7 @@ static void draw_(CmdRec *r, bool indexed) {
     for (int i = 0; i < st.nattrib; i++) vkey.attr_kind[i] = (uint8_t)attr_kind(st.attrib[i] & 0xFF);
     for (int i = 0; i < st.rt.ncolor; i++) if (st.rt.color[i]) fkey.rt_kind[i] = (uint8_t)rt_kind(st.rt.color[i]->format);
     Prog *pr = get_program(st.program, &vkey, &fkey);
+    if (pr && atomic_load(&pr->state) == 0) build_wait(&pr->state);
     if (!pr || atomic_load(&pr->state) != 1) { SKIP(!pr ? SK_NO_STAGES : atomic_load(&pr->state) == 2 ? SK_PROG_FAILED : SK_PROG_BUILDING); return; }
     g_mirror_w = 0;
     extern float renderer_ao_blur_scale(NvnTexture *t);
@@ -7168,6 +7195,7 @@ static void draw_(CmdRec *r, bool indexed) {
         // (LARECOMP_VK_RECORDER_WAIT_PIPES=1, record.c: pipe_resolve); one that failed is always skipped
         int ps = atomic_load(&pp->state);
         if (ps == 2) { SKIP(SK_PIPE_FAILED); return; }
+        if (ps == 0 && !rec_wait_pipes()) ps = build_wait(&pp->state) ? 1 : ps;
         if (ps != 1 && !rec_wait_pipes()) { SKIP(SK_PIPE_BUILDING); return; }
     }
     ss_enabled();
