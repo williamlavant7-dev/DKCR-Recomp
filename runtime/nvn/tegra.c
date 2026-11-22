@@ -127,3 +127,26 @@ void tegra_swizzle(const uint8_t *src, uint8_t *dst, uint32_t wb, uint32_t hb, u
                    uint32_t bh_log2, uint32_t bd_log2) {
     copy_surface(src, dst, wb, hb, d, bpb, bh_log2, bd_log2, false);
 }
+
+// A region of a level (whole blocks: x0 / w in blocks, y0 / h in block rows, z0 / d in slices) from linear rows
+// (src_pitch bytes a row, src_slice a slice) into a block-linear level wb x hb. Runs never cross a 16-byte sector:
+// those are the unit both layouts keep contiguous.
+void tegra_swizzle_region(const uint8_t *src, uint64_t src_pitch, uint64_t src_slice, uint8_t *dst, uint32_t wb,
+                          uint32_t hb, uint32_t bpb, uint32_t bh_log2, uint32_t bd_log2, uint32_t x0, uint32_t y0,
+                          uint32_t z0, uint32_t w, uint32_t h, uint32_t d) {
+    uint32_t width_gobs = (wb * bpb + 63) / 64;
+    uint32_t gob_rows = 8u << bh_log2;
+    uint64_t blocks_rows = (hb + gob_rows - 1) / gob_rows;
+    for (uint32_t z = 0; z < d; z++)
+        for (uint32_t y = 0; y < h; y++) {
+            const uint8_t *row = src + z * src_slice + y * src_pitch;
+            uint32_t xb = x0 * bpb, end = (x0 + w) * bpb;
+            while (xb < end) {
+                uint32_t n = 16 - (xb & 15);
+                if (n > end - xb) n = end - xb;
+                memcpy(dst + gob_offset(xb, y0 + y, z0 + z, width_gobs, bh_log2, bd_log2, blocks_rows),
+                       row + (xb - x0 * bpb), n);
+                xb += n;
+            }
+        }
+}

@@ -530,20 +530,47 @@ NVN(nvnTextureViewGetDepthStencilMode) { NvnTextureView *v = AP(0); *(uint32_t *
 NVN(nvnTextureViewGetTarget) { NvnTextureView *v = AP(0); *(uint32_t *)AP(1) = v->target; RET(!!(v->setmask & 32)); }
 NVN(nvnTextureViewCompare) { RET(memcmp(AP(0), AP(1), 0x1C) == 0); }
 
-NVN(nvnTextureWriteTexels) {
-    // (texture, view, region, data) -- linear data into block-linear storage
+// (texture, view, region, data[, row stride, image stride]): linear texels into the texture's storage. region: x, y, z
+// offset and width, height, depth in texels; the view picks the level and the first layer (an array texture's z is
+// the layer). DKCR's Unity fills its smaller textures' mip levels and array layers this way: all but whole level-0
+// writes were dropped ("partial WriteTexels not implemented", 160 times in a play session).
+static void write_texels(Cpu *c, uint64_t row_stride, uint64_t image_stride) {
     NvnTexture *t = HOST(NvnTexture, A(0));
-    const int32_t *r = AP(2);  // xoffset, yoffset, zoffset, width, height, depth
-    LevelLayout l = tegra_level(&t->layout, 0);
-    if (r && r[0] == 0 && r[1] == 0 && (uint32_t)r[3] == t->width && (uint32_t)r[4] == t->height) {
-        tegra_swizzle(AP(3), (uint8_t *)(uintptr_t)t->addr + l.offset, l.wb, l.hb, r[5] > 0 ? (uint32_t)r[5] : 1,
-                      t->layout.fmt->bpb, l.block_height_log2, l.block_depth_log2);
-        backend_pool_written(t->addr, tegra_total_size(&t->layout));
-    } else {
-        LOG("[nvn] partial WriteTexels not implemented\n");
+    const NvnTextureView *v = AP(1);
+    const int32_t *r = AP(2);
+    const uint8_t *data = AP(3);
+    if (!t || !r || !data || !t->layout.fmt) return;
+    const FormatInfo *fi = t->layout.fmt;
+    uint32_t level = v && (v->setmask & 1) ? v->base_level : 0, layer = v && (v->setmask & 2) ? v->min_layer : 0;
+    if (level >= (t->layout.levels ? t->layout.levels : 1)) return;
+    LevelLayout l = tegra_level(&t->layout, level);
+    if (r[0] < 0 || r[1] < 0 || r[2] < 0 || r[3] <= 0 || r[4] <= 0) return;
+    uint32_t bw = fi->bw ? fi->bw : 1, bh = fi->bh ? fi->bh : 1;
+    uint32_t x0 = (uint32_t)r[0] / bw, y0 = (uint32_t)r[1] / bh, w = ((uint32_t)r[3] + bw - 1) / bw,
+             h = ((uint32_t)r[4] + bh - 1) / bh, d = r[5] > 0 ? (uint32_t)r[5] : 1;
+    bool is3d = t->layout.depth > 1;
+    uint32_t z0 = is3d ? (uint32_t)r[2] : 0;
+    if (!is3d) layer += (uint32_t)r[2];
+    if (x0 + w > l.wb || y0 + h > l.hb || (is3d && z0 + d > l.d)) return;
+    uint64_t pitch = row_stride ? row_stride : (uint64_t)w * fi->bpb;
+    uint64_t slice = image_stride ? image_stride : pitch * h;
+    uint64_t layer_size = tegra_layer_size(&t->layout);
+    uint32_t layers = is3d ? 1 : d;  // (an array: depth counts layers)
+    for (uint32_t i = 0; i < layers; i++) {
+        uint8_t *dst = (uint8_t *)(uintptr_t)t->addr + (uint64_t)(layer + i) * layer_size + l.offset;
+        const uint8_t *src = data + (uint64_t)i * slice;
+        if (t->flags & 0x10) {  // linear storage: rows t->stride apart
+            for (uint32_t y = 0; y < h; y++)
+                memcpy(dst + (uint64_t)(y0 + y) * t->stride + (uint64_t)x0 * fi->bpb, src + y * pitch, (size_t)w * fi->bpb);
+        } else {
+            tegra_swizzle_region(src, pitch, slice, dst, l.wb, l.hb, fi->bpb, l.block_height_log2, l.block_depth_log2,
+                                 x0, y0, z0, w, h, is3d ? d : 1);
+        }
     }
+    backend_pool_written(t->addr, tegra_total_size(&t->layout));
 }
-NVN(nvnTextureWriteTexelsStrided) { LOG("[nvn] WriteTexelsStrided not implemented\n"); (void)c; }
+NVN(nvnTextureWriteTexels) { write_texels(c, 0, 0); }
+NVN(nvnTextureWriteTexelsStrided) { write_texels(c, A(4), A(5)); }
 NVN(nvnTextureReadTexels) { LOG("[nvn] ReadTexels not implemented\n"); (void)c; }
 NVN(nvnTextureReadTexelsStrided) { (void)c; }
 

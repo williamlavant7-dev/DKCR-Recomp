@@ -40,3 +40,7 @@ void tegra_deswizzle(const uint8_t *src, uint8_t *dst, uint32_t wb, uint32_t hb,
                      uint32_t block_height_log2, uint32_t block_depth_log2);
 void tegra_swizzle(const uint8_t *src, uint8_t *dst, uint32_t wb, uint32_t hb, uint32_t d, uint32_t bpb,
                    uint32_t block_height_log2, uint32_t block_depth_log2);
+// A region of a level (in blocks) from linear rows into it: nvnTextureWriteTexels
+void tegra_swizzle_region(const uint8_t *src, uint64_t src_pitch, uint64_t src_slice, uint8_t *dst, uint32_t wb,
+                          uint32_t hb, uint32_t bpb, uint32_t bh_log2, uint32_t bd_log2, uint32_t x0, uint32_t y0,
+                          uint32_t z0, uint32_t w, uint32_t h, uint32_t d);
