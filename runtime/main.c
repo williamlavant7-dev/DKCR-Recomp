@@ -15,6 +15,7 @@
 #include "settings.h"
 #include "hle.h"
 #include "kernel.h"
+#include "gamebuild.h"
 #include "recorder.h"
 
 const char *g_romfs_dir;
@@ -323,6 +324,69 @@ static void metal_hud_relaunch(void) {
 }
 #endif
 
+// ---- first start (a release: no game code ships, it is built from the player's own files): the game code built with
+// a window that shows how far it is (runtime/gamebuild.c - 30 to 60 minutes once (40 on a 6-core Ryzen 5 5500); again after an update of the app or
+// of the game files). The start screen used to do this, but it still knows only Link's Awakening's files.
+static SDL_Window *fs_win;
+static SDL_Renderer *fs_ren;
+static bool fs_quit;
+static void fs_draw(double f, const char *step) {
+    SDL_Event e;
+    while (SDL_PollEvent(&e))
+        if (e.type == SDL_EVENT_QUIT || e.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) fs_quit = true;
+    if (!fs_ren) return;
+    int w = 0, h = 0;
+    SDL_GetRenderOutputSize(fs_ren, &w, &h);
+    SDL_SetRenderDrawColor(fs_ren, 24, 28, 38, 255);
+    SDL_RenderClear(fs_ren);
+    float s = 2.0f, cw = SDL_DEBUG_TEXT_FONT_CHARACTER_SIZE * s;
+    SDL_SetRenderScale(fs_ren, s, s);
+    SDL_SetRenderDrawColor(fs_ren, 255, 214, 90, 255);
+    const char *title = "DKCR Recomp - first start";
+    SDL_RenderDebugText(fs_ren, (w / s - SDL_strlen(title) * cw / s) / 2, 40 / s, title);
+    SDL_SetRenderDrawColor(fs_ren, 230, 230, 230, 255);
+    const char *a = "Building the game code from your game files.";
+    const char *b = "This happens once and can take 30 to 60 minutes.";
+    SDL_RenderDebugText(fs_ren, (w / s - SDL_strlen(a) * cw / s) / 2, 90 / s, a);
+    SDL_RenderDebugText(fs_ren, (w / s - SDL_strlen(b) * cw / s) / 2, 115 / s, b);
+    SDL_SetRenderScale(fs_ren, 1, 1);
+    SDL_FRect back = {40, (float)h - 110, (float)w - 80, 28}, bar = back;
+    bar.w = back.w * (float)(f < 0 ? 0 : f > 1 ? 1 : f);
+    SDL_SetRenderDrawColor(fs_ren, 60, 66, 82, 255);
+    SDL_RenderFillRect(fs_ren, &back);
+    SDL_SetRenderDrawColor(fs_ren, 90, 190, 90, 255);
+    SDL_RenderFillRect(fs_ren, &bar);
+    char line[256];
+    SDL_snprintf(line, sizeof line, "%s %d%%", step ? step : "", (int)(f * 100));
+    SDL_SetRenderDrawColor(fs_ren, 200, 200, 200, 255);
+    SDL_RenderDebugText(fs_ren, 40, (float)h - 60, line);
+    SDL_RenderPresent(fs_ren);
+}
+static bool fs_cancelled(void) { return fs_quit; }
+
+static void first_start_build(const char *root) {
+    if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) return;
+    fs_win = SDL_CreateWindow("DKCR Recomp", 760, 300, 0);
+    fs_ren = fs_win ? SDL_CreateRenderer(fs_win, NULL) : NULL;
+    if (fs_ren) SDL_SetRenderVSync(fs_ren, 1);
+    fs_draw(0, "Starting...");
+    GameBuildOpts o = {.progress = fs_draw, .jobs = SDL_GetNumLogicalCPUCores(), .cancelled = fs_cancelled};
+    char why[512] = "";
+    LOG("[main] first start: building the game code from %s\n", root);
+    bool ok = gamebuild_run(root, &o, why, sizeof why);
+    if (fs_ren) SDL_DestroyRenderer(fs_ren);
+    if (fs_win) SDL_DestroyWindow(fs_win);
+    fs_ren = NULL, fs_win = NULL;
+    if (fs_quit) { LOG("[main] first start: closed while building (it resumes next time)\n"); exit(0); }
+    if (!ok) {
+        LOG("[main] first start: the game code couldn't be built: %s\n", why);
+        char msg[700];
+        SDL_snprintf(msg, sizeof msg, "The game code couldn't be built:\n%s\n\nDetails are in dkcrrecomp.log next to the program.", why);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "DKCR Recomp", msg, NULL);
+        exit(1);
+    }
+}
+
 int main(int argc, char **argv) {
 #ifdef __APPLE__
     metal_hud_relaunch();
@@ -375,6 +439,15 @@ int main(int argc, char **argv) {
 #else
     if (build_ios) { fprintf(stderr, "the iOS export isn't in this build of DKCR Recomp\n"); return 1; }
 #endif
+    // The release's instructions: exefs/ and romfs/ next to dkcrrecomp.exe (the data folder) - or in extracted/ as before
+    if (!strcmp(root, "extracted") && access("extracted/exefs/main", 0) != 0 && access("exefs/main", 0) == 0) root = ".";
+    if (!game_version_of(root) && !skip_launcher && !getenv("LARECOMP_FORCE_LAUNCHER") && gamebuild_available()) {
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_INFORMATION, "DKCR Recomp",
+                                 "Put your own Donkey Kong Country Returns HD game files next to dkcrrecomp.exe:\n"
+                                 "the exefs and romfs folders. Then start DKCR Recomp again.", NULL);
+        return 0;
+    }
+    if (game_version_of(root) && !gamelib_present(root) && gamebuild_available()) first_start_build(root);
     // Workaround: the start screen still sets up and checks Link's Awakening's files (its file list, its versions) and
     // turns DKCR's away, so with DKCR's files already in the game folder it is passed over and the game starts - a
     // double-click on the exe plays. LARECOMP_FORCE_LAUNCHER=1 still shows it.

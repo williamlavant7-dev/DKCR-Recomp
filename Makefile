@@ -418,14 +418,14 @@ deps-windows:
 	tools/build_deps_windows.sh
 dist:
 	@[ -f build/deps-win/lib/libavcodec.dll.a ] || { echo "make deps-windows first (LGPL FFmpeg)"; exit 1; }
-	@[ -d build/helper/lasgen ] || { echo "make gen-helper first (the game code generator)"; exit 1; }
+	@[ -d build/helper/dkcrgen ] || { echo "make gen-helper first (the game code generator)"; exit 1; }
 	@[ -x build/zig/zig.exe ] || { echo "tools/fetch_zig.sh first (the compiler)"; exit 1; }
 	$(MAKE) B=$(WIN_B) DEPS=$(CURDIR)/build/deps-win RELEASE=1 $(WIN_B)/dkcrrecomp.exe
 	! nm $(WIN_B)/dkcrrecomp.exe | grep ' f_70' >/dev/null  # (no game code inside)
 	rm -rf build/dist && mkdir -p "$(DIST)/gamelib-src"
 	cp $(WIN_B)/dkcrrecomp.exe $(WIN_B)/dkcrrecomp.dll.a "$(DIST)/"
 	tools/zig_slim.sh $(strip $(filter-out -Iruntime,$(GENFLAGS)))  # (zig with its runtime built ahead of time)
-	cp -R build/helper/lasgen "$(DIST)/"
+	cp -R build/helper/dkcrgen "$(DIST)/"
 	cp -R build/zig-slim "$(DIST)/zig"
 	cp runtime/cpu.h runtime/simd.h runtime/simd_fp.h runtime/gamelib.h tools/gamelib_entry.c runtime/hle/hle_symbols.txt \
 	    "$(DIST)/gamelib-src/"
@@ -436,7 +436,8 @@ dist:
 	cp third_party/fonts/DejaVu/LICENSE "$(DIST)/DejaVu-LICENSE.txt"
 	cp README.md LICENSE "$(DIST)/"  # (licenses and source links of the bundled components: README "License")
 	PATH="$(CURDIR)/build/deps-win/bin:$$PATH" ldd $(WIN_B)/dkcrrecomp.exe | awk '(/ucrt64/ || /clangarm64/ || /deps-win/) && !/vulkan-1/ {print $$3}' | sort -u | \
-	    xargs -I{} cp -u {} "$(DIST)/"
+	    while read -r f; do cp -u "$$f" "$(DIST)/"; done
+	cp docs/release/HOW-TO-PLAY.txt "$(DIST)/HOW TO PLAY.txt"  # (players: where their game files go)
 	! ls "$(DIST)" | grep -iE 'x264|x265|xvid|postproc'  # (no GPL codec libraries in the release)
 	# (no path of this machine inside: build/deps-win, debug info, zig's runtime. Not on CI: its paths name no one)
 	if [ "$${CI:-}" != true ]; then \
@@ -447,8 +448,8 @@ dist:
 	    else /c/Windows/System32/tar.exe -a -cf "DKCR Recomp-$(VERSION)-$(WINZIP).zip" "DKCR Recomp"; fi
 	@echo "build/dist/DKCR Recomp-$(VERSION)-$(WINZIP).zip"
 
-# The game code generator as a standalone helper, so players need no Python (tools/lasgen.spec, frozen by
-# PyInstaller in its own venv, build/gen-venv): build/helper/lasgen/, shipped as lasgen/ next to the exe or in
+# The game code generator as a standalone helper, so players need no Python (tools/dkcrgen.spec, frozen by
+# PyInstaller in its own venv, build/gen-venv): build/helper/dkcrgen/, shipped as dkcrgen/ next to the exe or in
 # Contents/Resources. The start screen's setup runs it on the player's own game files (runtime/gamebuild.c).
 # PyInstaller only builds for the OS it runs on. GEN_PY: the Python 3.12 the venv is made with.
 ifeq ($(PLATFORM),macos)
@@ -462,9 +463,9 @@ endif
 gen-helper: build/gen-venv/.ok
 	$(if $(filter windows,$(PLATFORM)),USERPROFILE="$$(cygpath -w ~ 2>/dev/null || echo $$HOME)") \
 	$(GEN_VPY) -m PyInstaller --noconfirm --clean --log-level WARN --distpath build/helper --workpath build/pyinstaller \
-	    tools/lasgen.spec
-	$(if $(filter windows,$(PLATFORM)),$(GEN_VPY) tools/pe_no_cfg.py build/helper/lasgen/lasgen.exe)
-	@du -sh build/helper/lasgen
+	    tools/dkcrgen.spec
+	$(if $(filter windows,$(PLATFORM)),$(GEN_VPY) tools/pe_no_cfg.py build/helper/dkcrgen/dkcrgen.exe)
+	@du -sh build/helper/dkcrgen
 
 build/gen-venv/.ok:
 	$(GEN_PY) -m venv build/gen-venv

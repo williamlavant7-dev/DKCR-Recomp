@@ -34,7 +34,7 @@ if [ ! -f "$P/lib/libavcodec.dll.a" ]; then
         --disable-autodetect --disable-programs --disable-doc --disable-network --disable-avdevice --disable-avfilter \
         --disable-swresample --disable-everything \
         --enable-protocol=file --enable-demuxer=matroska,mov --enable-muxer=mp4 \
-        --enable-mediafoundation --enable-encoder=h264_mf,mpeg4,aac \
+        --enable-mediafoundation --enable-d3d11va --enable-encoder=h264_mf,mpeg4,aac \
         --enable-decoder=vp9,vp8,vorbis,opus,h264,aac --enable-parser=vp9,vp8,vorbis,opus,h264,aac \
         && make -j"$JOBS" && rm -rf "$S/ffmpeg-root" && make install DESTDIR="$S/ffmpeg-root")
     cp -R "$S/ffmpeg-root$NEUTRAL"/. "$P"/

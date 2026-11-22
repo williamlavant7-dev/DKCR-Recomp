@@ -41,7 +41,7 @@ Vulkan, shaderc DLLs).
 ## Package
     make deps-windows   # once: the LGPL FFmpeg the zip ships (build/deps-win; MSYS2's own FFmpeg is GPL)
     make rando-helper   # the seed generator without Python (build/helper/rando-gen)
-    make gen-helper     # the game code generator without Python (build/helper/lasgen)
+    make gen-helper     # the game code generator without Python (build/helper/dkcrgen)
     tools/fetch_zig.sh  # the compiler the start screen builds the game code with (build/zig)
     make dist           # -> build/dist/DKCR Recomp-<version>-windows.zip (no game code inside)
 
@@ -65,7 +65,7 @@ above, except that the helpers need that Python passed in (there is no `py` laun
     tools/fetch_zig.sh  # (zig for aarch64-windows)
     make dist           # -> build/dist/DKCR Recomp-<version>-windows-arm64.zip
 
-Everything in the zip is ARM64 except the two helpers (`lasgen`, `rando-gen`), which are x64. AArch64 FP/SIMD
+Everything in the zip is ARM64 except the two helpers (`dkcrgen`, `rando-gen`), which are x64. AArch64 FP/SIMD
 instructions stay inline assembly (`--simd asm`), as on the Mac. The ARM64 zip is not part of the normal releases.
 It is built by `.github/workflows/experimental.yml` for the Experimental builds page.
 

@@ -1,7 +1,7 @@
 # PyInstaller spec: the game code generator (tools/gen.py and its modules) as a standalone onedir helper, so the start
 # screen's setup can build the game code on the player's machine without Python (runtime/gamebuild.c).
-# `make gen-helper` -> build/helper/lasgen/ (lasgen[.exe] + _internal/). Same command line as gen.py. Inside the
-# bundle (sys._MEIPASS) tools/rando/patch_variants.json sits at rando/ (gen.py finds it via __file__).
+# `make gen-helper` -> build/helper/dkcrgen/ (dkcrgen[.exe] + _internal/). Same command line as gen.py. Inside the
+# bundle (sys._MEIPASS) the game version tables sit at runtime/game_addresses/ (tools/game_addresses.py reads them).
 import glob
 import importlib.util
 import os
@@ -24,10 +24,9 @@ a = Analysis(
     pathex=[TOOLS],
     binaries=collect_dynamic_libs('capstone') + collect_dynamic_libs('unicorn')
              + [(p, 'unicorn/lib') for p in _uc_versioned],
-    datas=[(os.path.join(TOOLS, 'rando', 'patch_variants.json'), 'rando'),
-           (os.path.join(TOOLS, '..', 'runtime', 'game_addresses', 'versions.h'), 'runtime/game_addresses')]
-          + [(p, 'runtime/game_addresses')  # (every game version's patch table: gen.py picks one by build ID)
-             for p in sorted(glob.glob(os.path.join(TOOLS, '..', 'runtime', 'game_addresses', 'patches_v*.h')))],
+    datas=[(os.path.join(TOOLS, '..', 'runtime', 'game_addresses', 'versions.h'), 'runtime/game_addresses')]
+          + [(p, 'runtime/game_addresses')  # (every game version's patch table, DKCR's too: gen.py picks one by build ID)
+             for p in sorted(glob.glob(os.path.join(TOOLS, '..', 'runtime', 'game_addresses', 'patches_*.h')))],
     hiddenimports=collect_submodules('unicorn') + ['patches'],  # (unicorn imports its arch modules by name at run time; gen.py imports patches once the version is known)
     excludes=['tkinter', 'pydoc', 'doctest', 'unittest', 'pdb', 'IPython', 'numpy', 'setuptools', '_distutils_hack',
               'pkg_resources', 'ssl', '_ssl', '_hashlib', '_multibytecodec', '_codecs_cn', '_codecs_hk',
@@ -40,9 +39,9 @@ exe = EXE(
     a.scripts,
     [('hash_seed=0', None, 'OPTION')],  # (the same output every run)
     exclude_binaries=True,
-    name='lasgen',
+    name='dkcrgen',
     console=True,  # stderr = the progress lines the runtime reads (no window: CREATE_NO_WINDOW)
     strip=sys.platform == 'darwin',
     upx=False,
 )
-coll = COLLECT(exe, a.binaries, a.datas, strip=sys.platform == 'darwin', upx=False, name='lasgen')
+coll = COLLECT(exe, a.binaries, a.datas, strip=sys.platform == 'darwin', upx=False, name='dkcrgen')

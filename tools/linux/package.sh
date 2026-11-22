@@ -5,7 +5,7 @@
 # as an AppDir and packed by appimagetool: build/dist/LAS Recomp-<version>-linux-<arch>.AppImage
 # (named like the macOS / Windows releases; GitHub shows it as LAS.Recomp-<version>-linux-<arch>.AppImage).
 # Shipped next to the executable (usr/bin, where runtime/paths.c rt_resource looks): rando-gen/, what the start screen
-# builds the game code with on the player's machine (runtime/gamebuild.c: lasgen/, zig/ from tools/fetch_zig.sh,
+# builds the game code with on the player's machine (runtime/gamebuild.c: dkcrgen/, zig/ from tools/fetch_zig.sh,
 # gamelib-src/), the window icon, the start screen font. No game code: that's built from the player's own files. usr/lib: the libraries from deps/ only - glibc, libstdc++, the Vulkan loader and the
 # GPU drivers are the system's (a bundled loader would not find the user's drivers). No game files or fonts.
 set -euo pipefail
@@ -49,8 +49,8 @@ cp third_party/fonts/DejaVu/LICENSE "$APPDIR/usr/bin/DejaVu-LICENSE.txt"
 cp README.md LICENSE "$APPDIR/usr/bin/"  # (licenses and source links of the bundled components: README "License")
 [ -d "$L/helper/rando-gen" ] || { echo "no seed generator helper: tools/linux/rando_helper.sh $ARCH first"; exit 1; }
 cp -R "$L/helper/rando-gen" "$APPDIR/usr/bin/"
-[ -d "$L/helper/lasgen" ] || { echo "no game code generator helper: tools/linux/rando_helper.sh $ARCH first"; exit 1; }
-cp -R "$L/helper/lasgen" build/zig "$APPDIR/usr/bin/"
+[ -d "$L/helper/dkcrgen" ] || { echo "no game code generator helper: tools/linux/rando_helper.sh $ARCH first"; exit 1; }
+cp -R "$L/helper/dkcrgen" build/zig "$APPDIR/usr/bin/"
 mkdir "$APPDIR/usr/bin/gamelib-src"
 cp runtime/cpu.h runtime/simd.h runtime/simd_fp.h runtime/gamelib.h tools/gamelib_entry.c runtime/hle/hle_symbols.txt \
    "$APPDIR/usr/bin/gamelib-src/"

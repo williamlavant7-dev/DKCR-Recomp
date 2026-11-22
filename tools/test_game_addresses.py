@@ -271,7 +271,7 @@ others = [(n, (gc/'romfs'/n).stat().st_size if (gc/'romfs'/n).exists() else 9)
 assert romfs_check(bid0, others + [('main', copies[0][1]), ('main', copies[0][1] + 1)], gc) == (
     [f'odd {n} {z}' for n, z in others] + ['copy main', f'odd main {copies[0][1] + 1}'], 3836)
 
-# Same resource location used by tools/lasgen.spec in the frozen helper.
+# Same resource location used by tools/dkcrgen.spec in the frozen helper.
 bundled = tmp/'bundle/runtime/game_addresses'
 bundled.mkdir(parents=True)
 shutil.copyfile(TABLE_DIR/'versions.h', bundled/'versions.h')

@@ -1,0 +1,24 @@
+DKCR Recomp - how to play
+=========================
+
+1. Unzip this folder somewhere you can write to (Documents, Desktop or a games folder - not Program Files).
+
+2. Copy your own Donkey Kong Country Returns HD game files (Switch) into this folder, next to dkcrrecomp.exe:
+   the "exefs" folder and the "romfs" folder. They are not included and never will be.
+
+3. Double-click dkcrrecomp.exe.
+   The first time, it builds the game code from your game files. That happens once and can take 30 to 60
+   minutes (it shows a progress bar; you can close it and it carries on where it stopped next time).
+   Then the game starts.
+
+Your saves, settings and recordings stay in this folder.
+
+Controls: a controller (DualSense, Xbox, ...) or the keyboard. F1 or Esc opens the settings.
+F8 starts and stops a video recording (saved in the "recordings" folder).
+
+Problems? Open an issue at https://github.com/williamlavant7-dev/DKCR-Recomp/issues and attach
+dkcrrecomp.log from this folder.
+
+Needs: Windows 10 or 11 (64-bit), a CPU with AVX2, a graphics card with Vulkan 1.3, and about 1 GB of free space
+for the built game code (next to your game files).
+DKCR Recomp is a fan project, not affiliated with or endorsed by Nintendo.

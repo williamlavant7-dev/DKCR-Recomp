@@ -141,7 +141,7 @@ static void args_free(Args *a) {
 
 // ------------------------------------------------------------------ the tools
 typedef struct {
-    char gen[1100], gen_script[1100];  // generator: lasgen, or (source checkout) the venv's python + tools/gen.py
+    char gen[1100], gen_script[1100];  // generator: dkcrgen, or (source checkout) the venv's python + tools/gen.py
     char cc[1100];                     // compiler: zig (as `zig cc`), or LARECOMP_CC / clang
     bool zig;
     char inc[1100], entry[1100], hle[1100];  // headers the game code includes, tools/gamelib_entry.c, HLE names
@@ -300,7 +300,7 @@ static bool find_tools(Tools *t) {
     memset(t, 0, sizeof *t);
     const char *e = getenv("LARECOMP_GEN");
     if (e && *e) snprintf(t->gen, sizeof t->gen, "%s", e);
-    else if (!rt_resource("lasgen" SEP "lasgen" PLAT_EXE_SUFFIX, NULL, t->gen, sizeof t->gen) &&
+    else if (!rt_resource("dkcrgen" SEP "dkcrgen" PLAT_EXE_SUFFIX, NULL, t->gen, sizeof t->gen) &&
              !(rt_resource(NULL, "tools/" PLAT_VENV_PYTHON, t->gen, sizeof t->gen) &&
                rt_resource(NULL, "tools/gen.py", t->gen_script, sizeof t->gen_script)))
         return false;
@@ -675,11 +675,12 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     char work[1100], tmp[1100];
     snprintf(work, sizeof work, "%s" SEP ".gamebuild", game_dir);
     snprintf(tmp, sizeof tmp, "%s" SEP "%s.tmp", work, lib_name);
-    char input_paths[6][1100], spec[4096];
+    char input_paths[7][1100], spec[4096];
     snprintf(input_paths[0], sizeof input_paths[0], "%s" SEP "exefs" SEP "main", game_dir);
     snprintf(input_paths[1], sizeof input_paths[1], "%s" SEP "exefs" SEP "sdk", game_dir);
     const char *headers[] = {"cpu.h", "simd.h", "simd_fp.h", "gamelib.h"};
     for (int i = 0; i < 4; ++i) snprintf(input_paths[i+2], sizeof input_paths[i+2], "%s" SEP "%s", t.inc, headers[i]);
+    snprintf(input_paths[6], sizeof input_paths[6], "%s" SEP "exefs" SEP "subsdk0", game_dir);
     // Generator changes should rebuild only chunks whose C changed, as in the existing incremental builder.
     // Compiler/header/flag changes invalidate every object; entry always rebuilds because it embeds the library id.
     const char *inputs[] = {input_paths[2], input_paths[3], input_paths[4], input_paths[5], t.cc};
@@ -700,8 +701,8 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         snprintf(rp, sizeof rp, "%s" SEP "gamelib_entry.receipt", work);
         update = stat(rp, &st) == 0;
     }
-    const char *gen_inputs[5] = {input_paths[0], input_paths[1], t.gen, t.hle};
-    int ngen = 4;
+    const char *gen_inputs[6] = {input_paths[0], input_paths[1], input_paths[6], t.gen, t.hle};
+    int ngen = 5;
     if (t.gen_script[0]) gen_inputs[ngen++] = t.gen_script;
     if (!build_cache_prepare_generation(cache, lib_id, gen_inputs, ngen, why, why_size)) {
         build_cache_failed(cache);
@@ -748,11 +749,13 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     LOG("[gamebuild] generator %s%s%s, compiler %s%s, %d jobs\n", t.gen, t.gen_script[0] ? " " : "", t.gen_script,
         t.cc, t.zig ? " cc" : "", o->jobs);
 
-    // 1. the generator, both modules at once; their finished files are compiled while it goes on
-    Gen gens[2] = {{.name = "main"}, {.name = "sdk"}};
-    static const char *const base[2] = {"0x7000000000", "0x7008000000"};  // (rt.h; TODO DKCR: subsdk0 at 0x7007000000)
+    // 1. the generator, every module at once (DKCR: main, sdk and subsdk0, its video player); their finished files
+    // are compiled while it goes on
+    enum { NGEN = 3 };
+    Gen gens[NGEN] = {{.name = "main"}, {.name = "sdk"}, {.name = "subsdk0"}};
+    static const char *const base[NGEN] = {"0x7000000000", "0x7008000000", "0x7007000000"};  // (rt.h, the Makefile's gen)
     bool ok = true;
-    for (int i = 0; i < 2 && ok; i++) {
+    for (int i = 0; i < NGEN && ok; i++) {
         Gen *g = &gens[i];
         g->exit = -1;
         snprintf(g->log, sizeof g->log, "%s" SEP "gen_%s.log", work, g->name);
@@ -787,8 +790,8 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
     }
 
     Units units = {0};
-    int queued[2] = {0, 0};  // chunk files of each module put in units so far
-    bool tables[2] = {false, false};
+    int queued[NGEN] = {0};  // chunk files of each module put in units so far
+    bool tables[NGEN] = {false};
     int next = 0, jobs = o->jobs < 1 ? 1 : o->jobs > 64 ? 64 : o->jobs;
     struct { PlatProc p; int unit; } run[64];
     int nrun = 0;
@@ -806,7 +809,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         bool gens_done = true;
         double gen_frac = 0;
         unsigned long long written = 0;
-        for (int i = 0; i < 2; i++) {
+        for (int i = 0; i < NGEN; i++) {
             Gen *g = &gens[i];
             if (g->exit < 0) {
                 read_gen_log(g);
@@ -842,7 +845,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
                 add_unit(&units, src, work, stem);
                 tables[i] = true;
             }
-            gen_frac += g->exit == 0 ? 0.5 : g->n ? 0.5 * (double)g->ci / (double)g->n : 0;
+            gen_frac += (g->exit == 0 ? 1.0 : g->n ? (double)g->ci / (double)g->n : 0) / NGEN;
         }
         if (!ok) break;
         for (int k = 0; k < units.n; k++) written += units.u[k].bytes;
@@ -896,7 +899,7 @@ bool gamebuild_run(const char *game_dir, const GameBuildOpts *o, char *why, size
         sleep_ms(50);
     }
     for (int k = 0; k < nrun; k++) stop(run[k].p);  // (a failure: the rest is of no use - the failure shows at once)
-    for (int i = 0; i < 2; i++)
+    for (int i = 0; i < NGEN; i++)
         if (gens[i].p && gens[i].exit < 0) stop(gens[i].p);
 
     // 2. link
