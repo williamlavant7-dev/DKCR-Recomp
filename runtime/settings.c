@@ -21,10 +21,19 @@
 
 #define SETTINGS_FILE settings_file()
 
-// LARECOMP_SETTINGS=<path>: another settings file (test runs never touch the player's larecomp.ini)
+// LARECOMP_SETTINGS=<path>: another settings file (test runs never touch the player's dkcrrecomp.ini). A data folder
+// from before the rename has larecomp.ini: it becomes dkcrrecomp.ini the first time the settings are read.
 static const char *settings_file(void) {
     const char *e = getenv("LARECOMP_SETTINGS");
-    return e && *e ? e : "larecomp.ini";
+    if (e && *e) return e;
+    static bool moved;
+    if (!moved) {
+        moved = true;
+        FILE *f = fopen("dkcrrecomp.ini", "r");
+        if (f) fclose(f);
+        else rename("larecomp.ini", "dkcrrecomp.ini");
+    }
+    return "dkcrrecomp.ini";
 }
 
 const char *const g_screen_filters[N_SCREEN_FILTERS] = {LN("Off"), LN("Game Boy"), LN("Game Boy Color"),

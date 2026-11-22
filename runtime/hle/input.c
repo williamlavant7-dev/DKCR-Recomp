@@ -560,7 +560,7 @@ static _Atomic int32_t script_lx, script_ly, script_rx, script_ry;
 
 // Tests of the bindings, through them like a real player:
 // LARECOMP_HOST_INPUT="frame:key:<SDL key name>:frames,frame:pad:<button>:frames,..." holds a host key / controller
-//   button (names as in larecomp.ini's bind_* lines: "Z", "Keypad 0", "south", "ltrigger"...);
+//   button (names as in dkcrrecomp.ini's bind_* lines: "Z", "Keypad 0", "south", "ltrigger"...);
 //   "frame:lstick:<x>/<y>:frames" holds the controller's left stick there (raw SDL units, y up: a drifting stick).
 // "frame:type:<text>" types <text> as real key events (down, text, up per character), through the overlay menu / name
 //   entry first like a player's typing; "{Escape}" (any SDL key name) presses that key. No ',' or ':' in <text>.

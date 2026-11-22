@@ -1,236 +1,64 @@
-# LAS Recomp
+# DKCR Recomp
 
 > [!IMPORTANT]
-> **This project was made almost exclusively with AI.** Nearly all of the code, tooling, reverse engineering and
-> documentation in this repository was written by and will be maintained by an AI (Anthropic's Claude, through Claude Code),
-> directed, tested and reviewed by a human. As a huge fan of this game, I made this for myself. Sharing it is a courtesy.
-> If you don't agree with the use of AI or don't trust code written by AI, that is your right, but I'm not interested
-> in the controversy in relation to this project. You may simply ignore this project and its code.
-> As with anything on the internet, you run the code at your own discretion.
+> **This project was made almost entirely with AI.** Nearly all of the code, reverse engineering and documentation
+> here was written by an AI (Anthropic's Claude, through Claude Code), directed, tested and reviewed by me. I made
+> this for myself as a fan of the game, and sharing it is a courtesy. If you don't trust code written by AI, that is
+> your right; you can simply ignore this project. As with anything on the internet, you run it at your own discretion.
 
-**LAS Recomp** is a static recompilation of *The Legend of Zelda: Link's Awakening* (Nintendo Switch, 2019) into a
-native Windows, macOS, Linux, Android and iOS application.
+**DKCR Recomp** is a static recompilation of *Donkey Kong Country Returns HD* (Nintendo Switch, 2025) into a native
+Windows application. The game's code is translated ahead of time into native code, built on your own machine from
+your own game files, and runs with its graphics on Vulkan.
 
 > [!NOTE]
-> Currently supported platforms:
-> - macOS - Apple Silicon only, Metal graphics backend + MetalFX
-> - Windows - x86-64 only, Vulkan graphics backend
-> - Linux - x86-64, Vulkan graphics backend (AppImage)
-> - Android - arm64, Vulkan graphics backend
-> - iPhone and iPad - arm64, Metal graphics backend (sideloaded: see [iPhone and iPad](#iphone-and-ipad))
-> - Linux aarch64 (ARM) - **experimental**: the latest build is on the [Experimental builds](https://github.com/peiikai/LASRecomp/releases/tag/experimental) page; reports welcome
->   ([docs/linux.md](docs/linux.md) lists what to include)
+> **Status: early beta, Windows only for now.** The title screen, the world map and the levels play at 60 fps.
+> There is no download to play yet: setting up your game files still needs building from source (below). A
+> ready-to-play download comes once the start screen can set up DKCR's files for you.
+
+## What works
+
+- Boots to the title screen, the world map and the levels; plays at 60 fps on a modern PC.
+- Controllers through SDL 3, including DualSense and Xbox controllers.
+- Saves, the HUD and the menus.
+
+Known issues:
+- Some objects can pop in for a moment the first time a level starts, while its shaders are prepared. It gets better
+  the more you play: prepared shaders are kept in the `cache` folder.
+- Only Windows is tested. The macOS, Linux, Android and iOS code from LAS Recomp is still here, renamed but untested.
+- No video recording yet (planned).
 
 ## System requirements
 
-These are the minimums during the beta and may change as development continues.
+- Windows 10 or 11, x86-64, a CPU with AVX2 (Intel Haswell / 2013 or newer, AMD Zen or newer)
+- A GPU with Vulkan 1.3 (NVIDIA, AMD or Intel, with a current driver)
+- Your own game files of *Donkey Kong Country Returns HD* for Switch: the `exefs` and `romfs` folders
 
-**macOS:** any Apple Silicon Mac (M1 or newer) on macOS 15 or newer. Intel Macs aren't supported.
+## Building and playing (Windows)
 
-**Windows and Linux:**
+1. One-time setup, in PowerShell from the repository's folder:
+   `powershell -ExecutionPolicy Bypass -File tools\setup_windows.ps1`. It installs MSYS2 (clang, make, SDL 3,
+   FFmpeg, Vulkan, shaderc) and Python 3.12 for the tools.
+2. Put your game files where the build finds them: `extracted/exefs` and `extracted/romfs` in the repository's
+   folder (or pass `GAME=<folder>` to `make gen`).
+3. From an MSYS2 UCRT64 shell (or Git Bash with `export PATH="/c/msys64/ucrt64/bin:/c/msys64/usr/bin:$PATH"`):
+   `make gen` (recompiles the game's code from your files into `generated/`), then `make -j`.
+4. `tools/windows_play_folder.sh <your game files folder>` puts together a **DKCR Recomp** folder beside the
+   repository: `dkcrrecomp.exe`, the game code and every DLL it needs, with links to your game files. Double-click
+   `dkcrrecomp.exe` to play. Run the script again after each build; your saves and settings stay in that folder.
 
-| | Minimum |
-|---|---|
-| OS | Windows 10 or 11 (64-bit), or 64-bit Linux from about 2022 or newer (including the Steam Deck) |
-| CPU | x86-64 with AVX2 and FMA: Intel 4th gen (Haswell) or newer, or AMD Ryzen |
-| GPU | Vulkan 1.3 with an up-to-date driver, about as fast as a Switch or faster. For example: NVIDIA GTX 900 series or newer, AMD Radeon RX 400 series or Ryzen integrated graphics or newer, Intel Iris Xe or newer |
-| RAM | 8 GB (16 GB recommended) |
-| Disk | About 12 GB free for setup |
+More detail: [docs/BUILD-windows.md](docs/BUILD-windows.md).
 
-**Android:**
-
-| | Minimum |
-|---|---|
-| OS | Android 11 or newer, 64-bit (arm64) |
-| Chip | Snapdragon 865 (Adreno 650) or as fast, for example the Retroid Pocket 5 |
-| GPU driver | Vulkan 1.3. Older Adreno phones ship a Vulkan 1.1 driver: pick a Turnip driver package in Settings > System. The latest we've tested is [Turnip 26.3.0 R6](https://github.com/StevenMXZ/Adreno-Tools-Drivers/releases/tag/v37) (`Turnip_v26.3.0-R6.zip`) from StevenMXZ's Adreno-Tools-Drivers |
-| RAM | 8 GB |
-| Storage | About 15 GB free |
-
-> [!TIP]
-> We recommend turning on Dynamic resolution and choosing an FPS target. The resolution then adjusts to what your device
-> can handle, and drops when the chip heats up and slows down, which most phones and tablets do over longer play.
-
-**iPhone and iPad:**
-
-| | Minimum |
-|---|---|
-| OS | iOS or iPadOS 16.4 or newer |
-| Device | iPhone 15 Pro or newer<br>iPad Pro (2021) or newer<br>iPad Air (2022) or newer<br>iPad mini (2024) or newer |
-| Storage | About 15 GB free |
-
-> [!TIP]
-> We recommend turning on Dynamic resolution and choosing an FPS target. The resolution then adjusts to what your device
-> can handle, and drops when the chip heats up and slows down, which most phones and tablets do over longer play.
-
-![Mabe Village in a 21:9 window: the unlocked aspect ratio shows more of the island](docs/ultrawide.jpg)
-
-> [!NOTE]
-> **No game files are included.** LAS Recomp needs your own legally obtained copy of the extracted game files of
-> *Link's Awakening* **v1.0.0, v1.0.1 or v1.1.0**. When setting up, choose a folder that contains the `exefs`
-> and `romfs` folders, or their contents. Instructions on how to obtain these files will **NOT** be provided.
-> On first launch the app sets up what it needs, including the actual recompilation locally. No game files, assets or fonts are included.
-> The screenshot shows the start screen after setup; no Nintendo artwork is included until provided by the user.
-
-![The start screen: choose vanilla or a randomizer seed, set up your game files, settings](docs/start_screen.jpg)
-
-## Project Discord
-https://discord.gg/DhrgdYqdcY
-
-## Status
-
-This is a beta release. That means bugs are likely, crashes could occur, randomizer seeds could possibly be unsolvable (dungeon room shuffle modes are especially experimental at this point) and some graphics issues remain (especially in wide and ultrawide aspect ratios). This is a work in progress, hence the beta designation. To report a bug or a possible randomizer logic issue, open a [GitHub issue](https://github.com/peiikai/LASRecomp/issues) - see [CONTRIBUTING.md](CONTRIBUTING.md#reporting-bugs) for what to include.
-
-### Known issues
-
-Known issues and their status are on the [GitHub issues page](https://github.com/peiikai/LASRecomp/issues).
-
-## Steam Deck
-
-- Add the AppImage to Steam as a non-Steam game and play it from there. In Desktop Mode, games Steam didn't launch
-  get Steam's desktop controller layout, which sends extra keyboard presses.
-- If it won't start, add this to the game's launch options in Steam: `APPIMAGE_EXTRACT_AND_RUN=1 %command%`
-
-## iPhone and iPad
-
-The iOS app is made on your computer from your own game files, then sideloaded.
-
-1. Set up LAS Recomp on a Mac, Windows or Linux computer as usual.
-2. From the same release, download `LAS Recomp-<version>-iOS.laskit`.
-3. On the start screen, open Settings > System > Recomp for iOS..., choose the kit, then Export iOS app.
-   The app is saved to your Downloads folder as `LAS Recomp-<version>-iOS.ipa`.
-4. Install the .ipa with a sideloading tool such as SideStore, AltStore or Sideloadly. A free Apple account works,
-   but the app then has to be refreshed every 7 days. LAS Recomp only makes the .ipa. Installing it is up to you,
-   and we can't help with these tools since they're made by others. The extra steps come from Apple's limits on
-   installing apps, not from LAS Recomp.
-5. Copy your game files folder (with `exefs` and `romfs` in it) to the phone or iPad:
-   - Mac: connect it with a cable, select it in Finder's sidebar, open the Files tab and drag the folder onto
-     LAS Recomp.
-   - Windows: the same in the Apple Devices app (or iTunes), under Files > LAS Recomp.
-   - USB-C drive: put the folder on the drive and plug it in (iPhone 15 or newer, USB-C iPads).
-   - iCloud Drive: upload the folder, then in the Files app move it to On My iPhone (or On My iPad). LAS Recomp
-     won't use game files that are still on iCloud Drive.
-6. Open the app and choose that folder when it asks for your game files. Use the same game version as the files
-   on your computer.
-
-### Increased Memory Limit
-
-LAS Recomp asks iOS for more memory than a normal app gets. iOS only grants it when the tool that signs the app also
-turns on Increased Memory Limit for the app's App ID. Not every tool does. Without it, iOS may close the game when it
-needs more memory, and the start screen says "Installed without the increased memory limit".
-
-| How the app is installed | Keeps it |
-|---|---|
-| AltStore Classic 2.2 or newer | Yes |
-| [Impactor](https://github.com/claration/impactor), from a computer | Yes |
-| Xcode, with a free (Personal Team) or paid Apple account | Yes |
-| SideStore 0.7.0 with a free Apple account | No |
-| Sideloadly and other tools | Check the start screen |
-
-If your sideloader didn't add it, see [docs/ios.md](docs/ios.md#increased-memory-limit) for a one-time fix with
-GetMoreRam. More on the iOS app is there too.
-
-## Features
-
-- **This is not emulation.** It runs natively on Windows, macOS, Linux, Android, iPhone and iPad.
-- Works with game versions 1.0.0, 1.0.1 and 1.1.0.
-- **Built-in randomizer:** make seeds in the app, with presets, seed IDs to share, separate saves for each seed,
-  a tracker and a spoiler log. Shuffle items, entrances, dungeon rooms, enemies and more, and switch between
-  vanilla and any seed without restarting.
-- Wider screens show more of the island, up to ultrawide. You can switch back to the original 16:9.
-- Higher resolutions, a "match your display" option and dynamic resolution with an FPS target, with MetalFX (Mac)
-  or FSR 1 (Windows, Linux and Android) upscaling and SMAA anti-aliasing.
-- Sharper shadows, ambient occlusion and Frame Generation, each optional.
-- Shaders are prepared ahead of time, so new areas don't stutter.
-- In-game menu: F1, or Home or Minus + Plus on a controller.
-- Keyboard, controller and touch controls, with every button remappable and a touch layout editor. Button prompts
-  match your controller (Xbox, PlayStation or Nintendo).
-- Controller rumble, and the light bar on PlayStation controllers shows Link's health.
-- Stereo or 5.1 surround sound.
-- Play in English, Japanese, Spanish, French, German, Italian, Dutch, Russian, Korean or Chinese (Simplified or
-  Traditional), with menus also in Portuguese (Brazil). Auto follows your system language.
-- Optional extras: 360-degree movement, a hookshot that snaps to 8 directions, faster or instant text, blur removal,
-  mirror mode and faster walking.
-- Cosmetics: colours for Link, the grass, water, walls and more, weather (looks only), and Game Boy style filters.
-- Optional run timer, with LiveSplit support.
-
-## Building from source
-
-Every platform needs your own game files (v1.0.0, v1.0.1 or v1.1.0): build first, then use the start screen's game-file setup.
-`make gen` then recompiles the game code from your own game files into `generated/`, and `make` builds it into its own
-library next to the app (`build/lasgame.*`); without it the start screen builds that library itself, as it does for
-players. Release builds hold none of the game's code: the start screen builds it on each player's machine from their
-own game files, with the bundled generator (`make gen-helper`) and compiler (`tools/fetch_zig.sh`).
-
-### macOS
-
-Requirements: Apple Silicon, Xcode command line tools (clang), [Homebrew](https://brew.sh) `sdl3` and `ffmpeg`,
-Python 3.12.
-
-1. Build: `make -j10` -> `build/lasrecomp`. Set up your game files (above), then `make gen` and `make -j10` again.
-2. Randomizer: create the Python environment for LAS-Randomizer, from `third_party/LAS-Randomizer`:
-   `python3.12 -m venv venv && venv/bin/pip install -r requirements.txt`.
-3. Run: `./build/lasrecomp extracted` (start screen) or `./build/lasrecomp extracted --play` (straight into the game).
-4. Package: `make deps` (once: SDL3, FFmpeg, keystone and Python from pinned sources, built for macOS 15),
-   `make rando-helper` (the seed generator as a standalone helper, so players need no Python), `make gen-helper` and
-   `tools/fetch_zig.sh` (what the start screen builds the game code with), then `make app` ->
-   `build/LAS Recomp.app` (macOS 15+, Apple Silicon) and `make dmg` -> `build/dist/LAS Recomp-<version>-macOS.dmg`.
-
-### Windows
-
-Requirements: Windows 10+ x86-64, a CPU with AVX2 and a GPU with Vulkan 1.3. More detail in
-[docs/BUILD-windows.md](docs/BUILD-windows.md). Windows on ARM (experimental) builds with the same setup script; see
-that page.
-
-1. One-time setup, in PowerShell from the repo root: `powershell -ExecutionPolicy Bypass -File tools\setup_windows.ps1`.
-   It installs MSYS2 (UCRT64: clang, make, SDL3, FFmpeg, Vulkan, shaderc), Python 3.12 for the tools and the
-   randomizer (`third_party\LAS-Randomizer\venv`) and switches the clone to LF line endings.
-2. Build, from an MSYS2 UCRT64 shell (or Git Bash with `export PATH="/c/msys64/ucrt64/bin:/c/msys64/usr/bin:$PATH"`):
-   `make -j` -> `build/lasrecomp.exe`. Set up your game files (above), then `make gen` and `make -j` again.
-3. Run: `./build/lasrecomp.exe extracted`, from a shell with `C:\msys64\ucrt64\bin` on PATH (for the DLLs).
-4. Package: `make deps-windows` (once: LGPL FFmpeg), `make rando-helper RANDO_PY="<path to python.org Python 3.12>"`
-   (MSYS2's Python has no oead wheel), then `make dist` -> `build/dist/LAS Recomp-<version>-windows.zip`.
-
-### Linux
-
-Requirements: x86-64 with AVX2 (or aarch64, experimental), a GPU with Vulkan 1.3, clang, SDL 3, FFmpeg, shaderc and
-Vulkan Memory Allocator from your distribution, Python 3.12. Packages, cross builds and details in
-[docs/linux.md](docs/linux.md).
-
-1. Build: `make -j` -> `build/lasrecomp`. Set up your game files (above), then `make gen` and `make -j` again.
-2. Run: `./build/lasrecomp extracted`.
-3. Package: `make appimage` (this machine's arch; `ARCH=aarch64` cross-compiles) or `make appimages` (both) ->
-   `build/dist/LAS Recomp-<version>-linux-<arch>.AppImage`, built in Ubuntu 22.04 containers (podman). `make smoketest`
-   checks the x86-64 AppImage before a release.
-
-Where files live (game files, saves, seeds, settings and logs):
-- macOS: `~/Library/Application Support/com.peiikai.lasrecomp/`
-- Windows: next to `lasrecomp.exe`, so keep the `LAS Recomp` folder somewhere writable (not Program Files).
-- Linux: `~/.local/share/lasrecomp/`
-- Android: `Android/data/com.lasrecomp.android/files` in the phone's storage.
-- iPhone and iPad: the app's folder in Files (On My iPhone / On My iPad > LAS Recomp).
-- You can move it to another folder or drive in Settings > System > Data folder.
-- `LARECOMP_DATA_ROOT=<dir>` overrides all of these.
-- For a bug report, attach `lasrecomp.log` from that folder.
-
-### Android
-
-Requirements: the Android SDK with NDK 30.0.16248370, CMake 3.30.4 and platform 36, JDK 17 or newer, bash, curl and
-Python 3. Details in [docs/android.md](docs/android.md).
-
-1. Dependencies (once): `bash android/deps/build_deps.sh` and `bash android/deps/build_gen_deps.sh`.
-2. Build: `cd android && ./gradlew assembleDebug` -> `android/app/build/outputs/apk/debug/app-debug.apk`.
-3. Install it on the phone and set up your game files from the start screen. The game code is built on the phone.
-
-### Resuming game-code builds
-
-If the game-code build is cancelled or interrupted, **Resume game code** continues where it stopped. It also resumes
-by itself the next time LAS Recomp starts. **System > Clear build cache** removes the build's leftover files
-without touching the installed game, your game files or your saves.
+Where files live: everything (saves, settings in `dkcrrecomp.ini`, the shader cache) is in the **DKCR Recomp** folder,
+next to `dkcrrecomp.exe`. For a bug report, attach `dkcrrecomp.log` from that folder.
 
 ## Credits
 
-**Contributors** - thank you to everyone who has sent code (GitHub handles, in order of first contribution):
+**LAS Recomp** - DKCR Recomp is built on [LAS Recomp](https://github.com/peiikai/LASRecomp) by **Peiikai**, the
+static recompilation of *The Legend of Zelda: Link's Awakening* for Switch: its recompiler, its Switch host and its
+NVN graphics on Metal and Vulkan are what this project adapts to *Donkey Kong Country Returns HD*. Huge thanks to
+Peiikai and LAS Recomp's contributors, listed here as in LAS Recomp's own credits.
+
+**LAS Recomp's contributors** (GitHub handles, in order of first contribution):
 - **[@dvilelaf](https://github.com/dvilelaf)** - the System language setting (#15), a packaging fix (#10) and the
   level-transition crash fix (#34)
 - **[@Tensorlong](https://github.com/Tensorlong)** - the fix for the white Link on M1 Macs (#18)
@@ -337,14 +165,14 @@ none of their files are used):
 
 ## Legal
 
-LAS Recomp is a fan project. It is not affiliated with, endorsed by or sponsored by Nintendo. *The Legend of Zelda*
-and *Link's Awakening* are trademarks of Nintendo. No game files, game code, assets or fonts are included - not in
-this repository and not in release builds. You must provide your own legally obtained copy of the game files to play.
+DKCR Recomp is a fan project. It is not affiliated with, endorsed by or sponsored by Nintendo. *Donkey Kong* and
+*Donkey Kong Country Returns* are trademarks of Nintendo. No game files, game code, assets or fonts are included - not in
+this repository and not in any release. You must provide your own legally obtained copy of the game files to play.
 
 ## License
 
-LAS Recomp's own code (the recompiler tools, the runtime, the randomizer additions) is open source under the
-[MIT License](LICENSE). Third-party components keep their own licenses: LAS-Randomizer (MIT), ported audio renderer code (MIT, see `third_party/`), Dear ImGui (MIT),
+DKCR Recomp's own code, and the LAS Recomp code it is built on (the recompiler tools, the runtime), is open source
+under the [MIT License](LICENSE). Third-party components keep their own licenses: LAS-Randomizer (MIT), ported audio renderer code (MIT, see `third_party/`), Dear ImGui (MIT),
 Vulkan Memory Allocator (MIT), SMAA (MIT), AMD FSR 1 (MIT), the Baloo 2 and BIZ UDPGothic fonts (SIL OFL 1.1), the DejaVu Sans font (Bitstream Vera / DejaVu license), SDL 3 (zlib), FFmpeg (LGPL 2.1+, linked dynamically, and statically in the iOS app), the
 Zig compiler (MIT; its LLVM / Clang / LLD: Apache 2.0 with LLVM exceptions; its C library headers keep their own
 licenses), the iOS kit's Mach-O linker (LLD as built by the Rust project: Apache 2.0 with LLVM exceptions), miniz
@@ -355,7 +183,7 @@ processes, so it embeds CPython and the seed generator's packages - oead, evfl a
 quicktex (LGPL 3), Pillow, PyYAML, appdirs - and links SDL 3 and FFmpeg (LGPL 2.1+) statically; the app's `LICENSES/`
 folder carries each one's licence text, its sources are this repository plus the versions in the table (the LGPL
 libraries can be relinked: `make deps-ios` builds them from source, `make ipa` the app), and the game code library it
-embeds is built from the player's own game files and never shared. The license covers LAS Recomp's code only - it grants
+embeds is built from the player's own game files and never shared. The license covers DKCR Recomp's code only - it grants
 nothing for Nintendo's game, which you must supply yourself.
 
 ### Source code of bundled third-party components

@@ -27,7 +27,7 @@ O=$REPO/build/smoke
 rm -rf "$O" && mkdir -p "$O/root/build" "$O/shots"
 cp -R "$SAVE" "$O/save"
 # test runs: no update check, no sound, a data folder of their own (runtime/paths.h), the AppImage run without FUSE
-export LARECOMP_DATA_ROOT=$O/root LARECOMP_SAVE_DIR=$O/save LARECOMP_SETTINGS=$O/root/larecomp.ini \
+export LARECOMP_DATA_ROOT=$O/root LARECOMP_SAVE_DIR=$O/save LARECOMP_SETTINGS=$O/root/dkcrrecomp.ini \
        LARECOMP_NO_UPDATE_CHECK=1 LARECOMP_NO_AUDIO=1 APPIMAGE_EXTRACT_AND_RUN=1
 FAILS=0
 report() {  # PASS|FAIL, text

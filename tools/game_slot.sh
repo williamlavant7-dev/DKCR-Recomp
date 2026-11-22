@@ -30,10 +30,10 @@ GAME_SLOT=  # (nothing to release at exit)
 # is a link to the main checkout's): where it would come up the app exits instead (runtime/main.c). Only a start
 # screen test with its own scratch LARECOMP_DATA_ROOT may pass LARECOMP_NO_LAUNCHER=0.
 export LARECOMP_NO_LAUNCHER=${LARECOMP_NO_LAUNCHER:-1}
-# test runs never write the player's larecomp.ini: a scratch copy unless the caller gave LARECOMP_SETTINGS
+# test runs never write the player's dkcrrecomp.ini: a scratch copy unless the caller gave LARECOMP_SETTINGS
 if [ -z "$LARECOMP_SETTINGS" ]; then
     mkdir -p build/test_ini
     LARECOMP_SETTINGS="build/test_ini/settings_$$.ini"
-    cp larecomp.ini "$LARECOMP_SETTINGS" 2>/dev/null || : > "$LARECOMP_SETTINGS"
+    cp dkcrrecomp.ini "$LARECOMP_SETTINGS" 2>/dev/null || : > "$LARECOMP_SETTINGS"
     export LARECOMP_SETTINGS
 fi

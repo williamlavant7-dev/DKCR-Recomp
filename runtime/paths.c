@@ -110,8 +110,8 @@ bool rt_dev_mode(void) { return g_dev; }
 #define NOTE_FROM ".lasrecomp_move_from"        // in a move's destination: the old folder, still to be emptied
 #define MARK_PARTIAL ".lasrecomp_incomplete"    // in a move's destination until its copy was checked
 // What a data folder holds (and a move takes along). Logs stay where they are.
-static const char *const DATA_ENTRIES[] = {"save", "rando", "larecomp.ini", "fonts", "gamecontrollerdb.txt", "cache",
-                                           "extracted"};
+static const char *const DATA_ENTRIES[] = {"save", "rando", "dkcrrecomp.ini", "larecomp.ini", "fonts",
+                                           "gamecontrollerdb.txt", "cache", "extracted"};  // (larecomp.ini: before the rename)
 #define N_ENTRIES (sizeof DATA_ENTRIES / sizeof *DATA_ENTRIES)
 static char g_home[1024];  // the platform's folder (where POINTER_FILE lives)
 
@@ -528,7 +528,7 @@ static bool has_entries(const char *dir) {
 // files beside them. One of DATA_ENTRIES alone is not (#736): another program's cache/, fonts/ or save/ was taken as
 // ours, used as the data folder with no Move offered, and taken along by a later move.
 static bool has_own_data(const char *dir) {
-    static const char *const own[] = {"larecomp.ini", NOTE_TO, NOTE_FROM};
+    static const char *const own[] = {"dkcrrecomp.ini", "larecomp.ini", NOTE_TO, NOTE_FROM};
     char p[1100];
     for (size_t i = 0; i < sizeof own / sizeof *own; i++) {
         join(p, sizeof p, dir, own[i]);

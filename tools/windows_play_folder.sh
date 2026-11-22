@@ -1,6 +1,6 @@
 #!/bin/bash
 # Windows (MSYS2 UCRT64): a folder to play from by double-clicking dkcrrecomp.exe, from this checkout's build.
-#   tools/windows_play_folder.sh <game files folder> [out folder, default "build/DKCR Recomp"]
+#   tools/windows_play_folder.sh <game files folder> [out folder, default "../DKCR Recomp": beside the checkout]
 # The game files folder is the one with exefs/ and romfs/ in it. Run `make` first (the game code, build/dkcrgame.dll).
 # The out folder gets: a release exe (no console window; the log is dkcrrecomp.log next to it), the game code, the
 # DLLs both load (MSYS2's: for this machine, not for handing out - `make dist` is the release), the fonts and icon,
@@ -10,7 +10,7 @@
 set -euo pipefail
 [ $# -ge 1 ] || { echo "usage: $0 <game files folder> [out folder]"; exit 1; }
 GAME=$1
-OUT=${2:-build/DKCR Recomp}
+OUT=${2:-../DKCR Recomp}
 [ -f "$GAME/exefs/main" ] && [ -d "$GAME/romfs" ] || { echo "$GAME has no exefs/main and romfs/"; exit 1; }
 [ -f build/dkcrgame.dll ] || { echo "no build/dkcrgame.dll: run make first"; exit 1; }
 
@@ -31,5 +31,5 @@ done
 
 # saves and settings: build/'s, the first time only
 [ -e "$OUT/save" ] || { [ -d build/save ] && cp -R build/save "$OUT/save"; } || true
-[ -e "$OUT/larecomp.ini" ] || { [ -f build/larecomp.ini ] && cp build/larecomp.ini "$OUT/"; } || true
+[ -e "$OUT/dkcrrecomp.ini" ] || { [ -f build/dkcrrecomp.ini ] && cp build/dkcrrecomp.ini "$OUT/"; } || true
 echo "$OUT/dkcrrecomp.exe"

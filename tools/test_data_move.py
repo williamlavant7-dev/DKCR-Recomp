@@ -28,7 +28,7 @@ extra = {'macos': ['-framework', 'CoreFoundation'], 'linux': ['-pthread', '-ldl'
          'windows': ['-D_FILE_OFFSET_BITS=64', '-D_POSIX_THREAD_SAFE_FUNCTIONS', '-D_CRT_RAND_S',
                      '-DWIN32_LEAN_AND_MEAN', '-DNOMINMAX', '-lwinmm', '-lole32', '-lshell32', '-lcomdlg32', '-luuid', '-ladvapi32']}[plat]
 NOTES = ('.lasrecomp_move_to', '.lasrecomp_move_from', '.lasrecomp_incomplete')
-ENTRIES = ('save', 'rando', 'larecomp.ini', 'fonts', 'cache', 'extracted')
+ENTRIES = ('save', 'rando', 'dkcrrecomp.ini', 'fonts', 'cache', 'extracted')
 
 
 def populate(d: Path):
@@ -40,7 +40,7 @@ def populate(d: Path):
     put('save/slot0/zelda.sav', 300_000)
     put('rando/My Seed/settings.json', 2_000)
     put('rando/My Seed/save/slot0/zelda.sav', 300_000)
-    put('larecomp.ini', 1_500)
+    put('dkcrrecomp.ini', 1_500)
     put('fonts/nintendo_udsg-r_std_003.bfttf', 50_000)
     put('cache/shaders.bin', 3_000_000)
     for i in range(24):
@@ -164,7 +164,7 @@ with tempfile.TemporaryDirectory() as directory:
             else:
                 (d / e).mkdir()
         return d
-    for name, entries in (('copy', None), ('ini', ['larecomp.ini']), ('save_rando', ['save', 'rando', 'cache']),
+    for name, entries in (('copy', None), ('ini', ['dkcrrecomp.ini']), ('save_rando', ['save', 'rando', 'cache']),
                           ('save_extracted', ['save', 'extracted']), ('move_note', ['.lasrecomp_move_to'])):
         if entries is None:
             d = S / 'data_copy'

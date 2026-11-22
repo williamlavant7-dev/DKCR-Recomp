@@ -1,5 +1,5 @@
 // Control remapping: tables runtime/hle/input.c reads on every input event (so a change applies at once), the
-// capture used by the "click a binding, then press" UI, and their larecomp.ini lines. See runtime/input_bind.h.
+// capture used by the "click a binding, then press" UI, and their dkcrrecomp.ini lines. See runtime/input_bind.h.
 #include <SDL3/SDL.h>
 #include <stdatomic.h>
 #include <stdlib.h>
@@ -42,7 +42,7 @@ static const char *const k_names[BIND_SLOT_COUNT] = {
     LN("Left stick Down"), LN("Left stick Left"), LN("Left stick Right"), LN("Right stick Up"),
     LN("Right stick Down"), LN("Right stick Left"), LN("Right stick Right"), LN("Open menu"), LN("Open menu"),
 };
-// controller buttons by position (larecomp.ini)
+// controller buttons by position (dkcrrecomp.ini)
 static const char *const k_pad_ini[PADB_HOST_COUNT] = {
     "south", "east", "west", "north", "back", "guide", "start", "lstick", "rstick", "lshoulder", "rshoulder",
     "dpad_up", "dpad_down", "dpad_left", "dpad_right", "misc1", "rpaddle1", "lpaddle1", "rpaddle2", "lpaddle2",
@@ -286,7 +286,7 @@ bool bind_capture_event(const SDL_Event *e) {
     }
 }
 
-// ------------------------------------------------------------------ larecomp.ini
+// ------------------------------------------------------------------ dkcrrecomp.ini
 bool bind_settings_load(const char *key, const char *val) {
     bool pad = !strncmp(key, "bind_pad_", 9), kb = !strncmp(key, "bind_key_", 9);
     if (!pad && !kb) return false;

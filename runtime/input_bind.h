@@ -1,5 +1,5 @@
 // Control remapping (runtime/hle/bindings.c): which controller button / key drives each Switch input. Edited from
-// the in-game menu's Controls tab and the start screen (runtime/ui/controls_ui.mm), saved in larecomp.ini.
+// the in-game menu's Controls tab and the start screen (runtime/ui/controls_ui.mm), saved in dkcrrecomp.ini.
 // Menus (the overlay, the start screen) never use these, so no binding can lock the player out: they follow the
 // game's layout, or the controller's own (Button layout; runtime/ui/pad_nav.h). The controller's shortcuts that open
 // the overlay are bindings too (BIND_MENU_*, #591: Home also opens Steam's and other launchers' overlays); F1 and Esc
@@ -70,12 +70,12 @@ bool bind_capture_event(const SDL_Event *e);
 // shortcut on one game button), 7 kept (the last menu shortcut), 8 cleared; *serial bumps
 int bind_last_result(int *dev, int *slot, int *other, int *serial);
 
-// larecomp.ini: bind_pad_<input> / bind_key_<input> (only the ones that differ from the defaults are written);
+// dkcrrecomp.ini: bind_pad_<input> / bind_key_<input> (only the ones that differ from the defaults are written);
 // bind_pad_menu1 / bind_pad_menu2 = guide, back+start or none
 bool bind_settings_load(const char *key, const char *val);
 void bind_settings_save(FILE *f);
 
-// bind_* names (larecomp.ini): Switch input "a", "zl", "ls_up", "menu1"... -> slot; controller button "south"... -> PADB value
+// bind_* names (dkcrrecomp.ini): Switch input "a", "zl", "ls_up", "menu1"... -> slot; controller button "south"... -> PADB value
 int bind_slot_from_name(const char *name);
 int bind_pad_from_name(const char *name);
 

@@ -294,9 +294,14 @@ static void metal_hud_relaunch(void) {
     char path[1100], dir[900];
     const char *e = getenv("LARECOMP_SETTINGS");
     if (e && *e) snprintf(path, sizeof path, "%s", e);
-    else if (rt_data_root_early(dir, sizeof dir)) snprintf(path, sizeof path, "%s/larecomp.ini", dir);
-    else snprintf(path, sizeof path, "larecomp.ini");  // (dev mode: the starting directory)
+    else if (rt_data_root_early(dir, sizeof dir)) snprintf(path, sizeof path, "%s/dkcrrecomp.ini", dir);
+    else snprintf(path, sizeof path, "dkcrrecomp.ini");  // (dev mode: the starting directory)
     FILE *f = fopen(path, "r");
+    if (!f) {  // (not renamed yet: settings.c renames larecomp.ini on its first read, after this)
+        char *slash = strrchr(path, '/');
+        snprintf(slash ? slash + 1 : path, sizeof path - (size_t)(slash ? slash + 1 - path : 0), "larecomp.ini");
+        f = fopen(path, "r");
+    }
     if (!f) return;
     char line[256];
     bool on = false;

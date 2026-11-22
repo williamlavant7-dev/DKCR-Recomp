@@ -27,7 +27,7 @@ From an MSYS2 UCRT64 shell, or Git Bash with MSYS2 first on PATH:
     make -j         # -> build/dkcrrecomp.exe and the game code library build/dkcrgame.dll
 
 To play by double-clicking, after `make`: `tools/windows_play_folder.sh <game files folder>` (the folder with
-`exefs/` and `romfs/`) puts together `build/DKCR Recomp/`: a release `dkcrrecomp.exe` (no console window, the log is
+`exefs/` and `romfs/`) puts together a `DKCR Recomp` folder beside the checkout: a release `dkcrrecomp.exe` (no console window, the log is
 `dkcrrecomp.log` next to it), the game code, the DLLs from MSYS2, and links to the game files. Saves stay in that
 folder. Run it again after each build.
 
