@@ -6,7 +6,7 @@ release zip.
 ## One-time setup
 Clone with LF line endings to a short path (deep folders hit Windows' path length limit), e.g.:
 
-    git clone -c core.autocrlf=false https://github.com/peiikai/LASRecomp.git C:\dev\lasrecomp
+    git clone -c core.autocrlf=false https://github.com/williamlavant7-dev/DKCR-Recomp.git C:\dev\dkcrrecomp
 
 (The setup script also sets `core.autocrlf=false`, but files already checked out keep CRLF until they are checked
 out again, and the bash tools break on CRLF.)

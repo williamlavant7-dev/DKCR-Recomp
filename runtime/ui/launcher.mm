@@ -115,7 +115,7 @@ static void save_png(id<MTLTexture> tex, const char *path) {
 // test build (a pre-release for a few players to try a fix) is test-<name>: the start screen says "Test build <name>",
 // and it previews LARECOMP_TEST_OF - the update check offers that release (or a later one) as soon as it's out, so its
 // players move to it.
-#define LARECOMP_VERSION "v0.6.0"
+#define LARECOMP_VERSION "v0.1.0"
 #define LARECOMP_TEST_OF "v0.6.0"
 // Experimental builds (.github/workflows/experimental.yml sets these): the build's time (YYYYMMDDHHMM, UTC; 0: not an
 // experimental build). They only look for a newer experimental build of their own platform, never a normal release.
@@ -149,8 +149,8 @@ extern "C" const char *larecomp_version(void) { return LARECOMP_VERSION; }  // (
 // v0.<n>.<m> the same as beta_<n>.<m>; other tags (the alpha_* ones) are ignored. (Beta 5 and earlier only know
 // beta_<n>: they never offer a hotfix; builds before Beta 5.3 don't know v0.<n>.<m> either.) Offline / no curl /
 // anything unexpected: nothing is shown.
-#define RELEASES_URL "https://api.github.com/repos/peiikai/LASRecomp/releases?per_page=100"
-#define RELEASE_PAGE "https://github.com/peiikai/LASRecomp/releases/tag/"
+#define RELEASES_URL "https://api.github.com/repos/williamlavant7-dev/DKCR-Recomp/releases?per_page=100"
+#define RELEASE_PAGE "https://github.com/williamlavant7-dev/DKCR-Recomp/releases/tag/"
 
 #include "update_tags.h"  // tag_rank, tag_label
 
@@ -174,7 +174,7 @@ static void *update_thread(void *) {
                                                               cachePolicy:NSURLRequestReloadIgnoringLocalCacheData
                                                           timeoutInterval:15];
             [rq setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
-            [rq setValue:@"LASRecomp/" LARECOMP_VERSION forHTTPHeaderField:@"User-Agent"];
+            [rq setValue:@"DKCRRecomp/" LARECOMP_VERSION forHTTPHeaderField:@"User-Agent"];
             dispatch_semaphore_t done = dispatch_semaphore_create(0);
             __block NSData *got = nil;
             [[[NSURLSession sharedSession] dataTaskWithRequest:rq completionHandler:^(NSData *d, NSURLResponse *r, NSError *err) {
@@ -196,10 +196,10 @@ static void *update_thread(void *) {
         mkdir((std::string(rt_data_root()) + "/cache").c_str(), 0755);
 #ifdef __ANDROID__
         (void)curl;  // (Android has no curl: the activity fetches it, runtime/platform/android_storage.c)
-        if (!android_fetch(RELEASES_URL, out.c_str(), "LASRecomp/" LARECOMP_VERSION)) { remove(out.c_str()); return NULL; }
+        if (!android_fetch(RELEASES_URL, out.c_str(), "DKCRRecomp/" LARECOMP_VERSION)) { remove(out.c_str()); return NULL; }
 #else
         const char *av[] = {curl.c_str(), "-fsSL", "--max-time", "15", "-H", "Accept: application/vnd.github+json",
-                            "-A", "LASRecomp/" LARECOMP_VERSION, RELEASES_URL, NULL};
+                            "-A", "DKCRRecomp/" LARECOMP_VERSION, RELEASES_URL, NULL};
         PlatProc p = plat_spawn(av, out.c_str(), false);
         if (!p || plat_proc_wait(p, true) != 0) { remove(out.c_str()); return NULL; }
 #endif
