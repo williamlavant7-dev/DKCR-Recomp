@@ -1,73 +1,112 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
   <defs>
+    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#0b1a3a"/>
-      <stop offset="0.55" stop-color="#1d4f7a"/>
-      <stop offset="1" stop-color="#2e8c9c"/>
+      <stop offset="0" stop-color="#3a3a8c"/>
+      <stop offset="0.45" stop-color="#d9607a"/>
+      <stop offset="0.8" stop-color="#ffa64d"/>
+      <stop offset="1" stop-color="#ffd98a"/>
     </linearGradient>
     <linearGradient id="sea" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#1f6f8f"/>
-      <stop offset="1" stop-color="#0c2f4f"/>
+      <stop offset="0" stop-color="#2a9bb0"/>
+      <stop offset="1" stop-color="#11506e"/>
     </linearGradient>
     <linearGradient id="sand" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#f3d79a"/>
-      <stop offset="1" stop-color="#c99a52"/>
+      <stop offset="0" stop-color="#f6dca0"/>
+      <stop offset="1" stop-color="#d1a45a"/>
     </linearGradient>
-    <linearGradient id="blade" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#e9f3ff"/>
-      <stop offset="0.5" stop-color="#ffffff"/>
-      <stop offset="0.5" stop-color="#b9cbe0"/>
-      <stop offset="1" stop-color="#8fa6c2"/>
+    <linearGradient id="rock" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5a3a4a"/>
+      <stop offset="1" stop-color="#2c1d2e"/>
     </linearGradient>
-    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#ffe08a"/>
-      <stop offset="1" stop-color="#c8891e"/>
+    <linearGradient id="lava" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffe066"/>
+      <stop offset="1" stop-color="#ff5a1f"/>
     </linearGradient>
-    <radialGradient id="moonglow" cx="0.5" cy="0.5" r="0.5">
-      <stop offset="0" stop-color="#fff6d8" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#fff6d8" stop-opacity="0"/>
+    <linearGradient id="wood" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#7a4520"/>
+      <stop offset="0.35" stop-color="#c47a3a"/>
+      <stop offset="0.65" stop-color="#b06a2e"/>
+      <stop offset="1" stop-color="#6a3a1a"/>
+    </linearGradient>
+    <linearGradient id="hoop" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#5d6570"/>
+      <stop offset="0.4" stop-color="#b9c2cc"/>
+      <stop offset="1" stop-color="#4a525c"/>
+    </linearGradient>
+    <radialGradient id="sunglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#fff1b8" stop-opacity="0.8"/>
+      <stop offset="1" stop-color="#fff1b8" stop-opacity="0"/>
     </radialGradient>
-    <clipPath id="sq"><rect x="100" y="100" width="824" height="824" rx="185"/></clipPath>
+    <radialGradient id="craterglow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffcf4d" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#ff6a1f" stop-opacity="0"/>
+    </radialGradient>
   </defs>
   <g clip-path="url(#sq)">
-    <rect x="100" y="100" width="824" height="824" fill="url(#sky)"/>
-    <!-- stars -->
-    <g fill="#fff8e0">
-      <circle cx="210" cy="215" r="5"/><circle cx="300" cy="170" r="3.5"/><circle cx="395" cy="250" r="4"/>
-      <circle cx="250" cy="330" r="3"/><circle cx="470" cy="165" r="3"/><circle cx="820" cy="380" r="3.5"/>
-      <circle cx="560" cy="300" r="2.8"/>
+    <rect x="0" y="0" width="1024" height="1024" fill="url(#sky)"/>
+    <!-- low sun -->
+    <circle cx="300" cy="560" r="190" fill="url(#sunglow)"/>
+    <circle cx="300" cy="560" r="95" fill="#fff1c2"/>
+    <!-- smoke -->
+    <g fill="#6b5560" opacity="0.85">
+      <circle cx="690" cy="300" r="62"/>
+      <circle cx="745" cy="235" r="74"/>
+      <circle cx="820" cy="190" r="82"/>
+      <circle cx="905" cy="170" r="90"/>
     </g>
-    <!-- moon -->
-    <circle cx="700" cy="275" r="200" fill="url(#moonglow)"/>
-    <circle cx="700" cy="275" r="92" fill="#fff3cf"/>
-    <circle cx="732" cy="252" r="82" fill="#25507c" opacity="0.18"/>
+    <g fill="#8a7078" opacity="0.7">
+      <circle cx="720" cy="270" r="40"/>
+      <circle cx="790" cy="215" r="48"/>
+      <circle cx="870" cy="175" r="52"/>
+    </g>
+    <!-- volcano -->
+    <circle cx="660" cy="360" r="120" fill="url(#craterglow)"/>
+    <path d="M430 640 L610 372 Q660 352 712 372 L900 640 Z" fill="url(#rock)"/>
+    <path d="M610 372 Q660 352 712 372 Q690 390 660 386 Q630 390 610 372 Z" fill="#ff8a2a"/>
+    <path d="M640 384 Q628 450 600 500 Q590 540 560 585 Q600 545 622 500 Q648 450 656 386 Z" fill="url(#lava)"/>
+    <path d="M684 384 Q700 440 732 470 Q752 500 770 540 Q745 505 720 480 Q690 450 676 386 Z" fill="url(#lava)"/>
     <!-- sea -->
-    <rect x="100" y="600" width="824" height="324" fill="url(#sea)"/>
-    <path d="M100 640 Q180 620 260 640 T420 640 T580 640 T740 640 T924 640" stroke="#7fd3e0" stroke-width="7" fill="none" opacity="0.7"/>
-    <path d="M100 705 Q200 685 300 705 T500 705 T700 705 T924 705" stroke="#5fb8cf" stroke-width="6" fill="none" opacity="0.55"/>
-    <!-- island -->
-    <path d="M150 640 Q330 520 560 600 Q700 610 770 640 Z" fill="#14363f"/>
-    <path d="M300 585 Q360 470 430 560 Q470 520 520 590 Z" fill="#1b4a52"/>
-    <!-- palm -->
-    <path d="M395 600 Q385 520 420 440" stroke="#0e2a31" stroke-width="16" fill="none" stroke-linecap="round"/>
-    <g fill="#0e2a31">
-      <path d="M420 440 Q360 410 320 440 Q365 420 420 446 Z"/>
-      <path d="M420 440 Q470 395 525 418 Q470 410 422 447 Z"/>
-      <path d="M420 440 Q400 380 350 375 Q395 395 416 446 Z"/>
-      <path d="M420 440 Q455 455 480 500 Q445 465 418 447 Z"/>
+    <rect x="0" y="620" width="1024" height="404" fill="url(#sea)"/>
+    <path d="M60 660 Q190 640 320 660 T580 660 T840 660 T1100 660" fill="none" stroke="#7fd3df" stroke-width="10" stroke-linecap="round" opacity="0.8"/>
+    <path d="M40 712 Q170 694 300 712 T560 712 T820 712 T1080 712" fill="none" stroke="#5fb9c9" stroke-width="8" stroke-linecap="round" opacity="0.6"/>
+    <!-- beach -->
+    <path d="M0 800 Q260 740 560 770 Q820 795 1024 760 L1024 1024 L0 1024 Z" fill="url(#sand)"/>
+    <!-- palm tree -->
+    <path d="M232 860 Q236 720 300 600 Q330 545 352 500" fill="none" stroke="#5a3a1e" stroke-width="30" stroke-linecap="round"/>
+    <path d="M232 860 Q236 720 300 600 Q330 545 352 500" fill="none" stroke="#7d5330" stroke-width="12" stroke-dasharray="6 26" stroke-linecap="round"/>
+    <g fill="#2f8f3a">
+      <path d="M352 500 Q290 440 196 452 Q270 470 330 520 Z"/>
+      <path d="M352 500 Q330 410 260 372 Q316 430 330 500 Z"/>
+      <path d="M352 500 Q410 410 500 404 Q420 440 370 512 Z"/>
+      <path d="M352 500 Q450 480 520 540 Q440 515 368 520 Z"/>
+      <path d="M352 500 Q300 530 250 610 Q310 548 360 516 Z"/>
     </g>
-    <!-- sword in the sand -->
-    <g transform="translate(600 360) rotate(7)">
-      <path d="M-22 120 L22 120 L22 470 L0 520 L-22 470 Z" fill="url(#blade)" stroke="#5c728e" stroke-width="4"/>
-      <rect x="-80" y="96" width="160" height="30" rx="12" fill="url(#gold)" stroke="#7a4d10" stroke-width="4"/>
-      <rect x="-15" y="0" width="30" height="100" rx="8" fill="#3b5fa8" stroke="#1d335f" stroke-width="4"/>
-      <circle cx="0" cy="-10" r="24" fill="url(#gold)" stroke="#7a4d10" stroke-width="4"/>
-      <path d="M-30 128 L0 150 L30 128" fill="#c8891e"/>
+    <g fill="#4fb84a">
+      <path d="M352 500 Q300 452 226 458 Q290 474 336 512 Z"/>
+      <path d="M352 500 Q412 424 480 416 Q420 448 368 506 Z"/>
     </g>
-    <!-- beach foreground -->
-    <path d="M100 924 L100 820 Q330 750 560 790 Q760 820 924 770 L924 924 Z" fill="url(#sand)"/>
-    <path d="M520 812 Q640 770 760 808" fill="#e6c27d"/>
-    <path d="M540 868 Q640 842 750 870" stroke="#b5864a" stroke-width="10" fill="none" opacity="0.6" stroke-linecap="round"/>
+    <circle cx="346" cy="512" r="14" fill="#6b4a22"/>
+    <circle cx="364" cy="518" r="13" fill="#5a3d1c"/>
+    <!-- barrel -->
+    <ellipse cx="640" cy="905" rx="150" ry="22" fill="#000" opacity="0.18"/>
+    <path d="M520 640 Q505 760 520 880 Q640 905 760 880 Q775 760 760 640 Q640 615 520 640 Z" fill="url(#wood)"/>
+    <g stroke="#5a3016" stroke-width="5" opacity="0.7" fill="none">
+      <path d="M580 630 Q570 760 580 892"/>
+      <path d="M640 625 Q640 760 640 898"/>
+      <path d="M700 630 Q710 760 700 892"/>
+    </g>
+    <path d="M516 690 Q640 712 764 690 L766 718 Q640 740 514 718 Z" fill="url(#hoop)"/>
+    <path d="M516 800 Q640 822 764 800 L766 828 Q640 850 514 828 Z" fill="url(#hoop)"/>
+    <ellipse cx="640" cy="638" rx="120" ry="22" fill="#8a5126"/>
+    <ellipse cx="640" cy="638" rx="100" ry="15" fill="#a8652f"/>
+    <!-- bananas on the barrel -->
+    <g stroke="#7a5a10" stroke-width="4">
+      <path d="M590 628 Q600 560 670 548 Q620 575 612 630 Z" fill="#ffd93b"/>
+      <path d="M612 630 Q640 568 712 566 Q655 590 636 632 Z" fill="#ffe25a"/>
+      <path d="M636 632 Q680 590 742 600 Q684 610 660 634 Z" fill="#ffd12a"/>
+    </g>
+    <path d="M664 548 L684 538 L690 552 L672 558 Z" fill="#5a3d10"/>
   </g>
   <rect x="100" y="100" width="824" height="824" rx="185" fill="none" stroke="#ffffff" stroke-opacity="0.12" stroke-width="4"/>
 </svg>
