@@ -127,11 +127,11 @@ static void cli_progress(double f, const char *step) {
     int pct = (int)(f * 100);
     if (pct != last) { last = pct; cli_say(true, "[gamebuild] %3d%% %s", pct, step); }
 }
-// `lasrecomp --build-ios <kit.laskit> [game files]` (runtime/main.c): the export as the start screen does it, to
+// `dkcrrecomp --build-ios <kit.laskit> [game files]` (runtime/main.c): the export as the start screen does it, to
 // ~/Downloads or LARECOMP_IOS_OUT=<path>. Exit status 0 when the .ipa was written.
 bool iosexport_run_cli(const char *kit, const char *game_dir) {
     if (!*kit) {
-        cli_say(false, "usage: lasrecomp --build-ios <kit.laskit> [game files folder]");
+        cli_say(false, "usage: dkcrrecomp --build-ios <kit.laskit> [game files folder]");
         return false;
     }
     char why[512], out[1100];

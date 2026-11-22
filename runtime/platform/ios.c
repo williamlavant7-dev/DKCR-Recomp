@@ -93,7 +93,7 @@ static uint64_t memory_limit(void) {
     return avail + vi.phys_footprint;
 }
 
-// stdout / stderr -> lasrecomp.log in the data folder, as on the desktop (five backups, posix_log.h; Documents when
+// stdout / stderr -> dkcrrecomp.log in the data folder, as on the desktop (five backups, posix_log.h; Documents when
 // the chosen one isn't there), unless LARECOMP_LOG_STDERR is set (Xcode / devicectl console runs).
 // LARECOMP_LOG_DOCUMENTS=1: in Documents whatever the data folder (where devicectl can pull it from).
 void plat_init(void) {

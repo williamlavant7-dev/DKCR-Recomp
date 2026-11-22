@@ -24,7 +24,10 @@
 #define MOVIE_EOS 4u
 
 // ------------------------------------------------------------------ MediaData (8-byte handle)
-typedef struct { char *key; char *sval; int64_t ival; bool is_str; } MdEntry;
+// kind: what Set* stored (Find* of another kind finds nothing, as with the SDK's typed items); ival holds integers,
+// sizes, pointers and the buffer address; dval decimals; rect a rectangle
+enum { MD_INT = 0, MD_STR, MD_INT64, MD_FLOAT, MD_DOUBLE, MD_SIZE, MD_PTR, MD_RECT, MD_BUF };
+typedef struct { char *key; char *sval; int64_t ival; bool is_str; int kind; double dval; int32_t rect[4]; } MdEntry;
 typedef struct { MdEntry e[32]; int n; void *codecpar; } MediaData;
 
 static MediaData *md(uint64_t guest) {
@@ -45,23 +48,39 @@ static MdEntry *md_slot(MediaData *m, const char *k) {
     e->key = strdup(k);
     return e;
 }
-static void md_set_int(MediaData *m, const char *k, int64_t v) { MdEntry *e = md_slot(m, k); if (e) { e->ival = v; e->is_str = false; } }
+static void md_set_int(MediaData *m, const char *k, int64_t v) {
+    MdEntry *e = md_slot(m, k);
+    if (e) { free(e->sval); e->sval = NULL; e->ival = v; e->is_str = false; e->kind = MD_INT; }
+}
 static void md_set_str(MediaData *m, const char *k, const char *v) {
     MdEntry *e = md_slot(m, k);
-    if (e) { free(e->sval); e->sval = strdup(v); e->is_str = true; }
+    if (e) { free(e->sval); e->sval = strdup(v ? v : ""); e->is_str = true; e->kind = MD_STR; }
+}
+static MdEntry *md_set_kind(MediaData *m, const char *k, int kind) {
+    MdEntry *e = k ? md_slot(m, k) : NULL;
+    if (e) { free(e->sval); e->sval = NULL; e->is_str = false; e->kind = kind; }
+    return e;
+}
+static const MdEntry *md_find(const MediaData *m, const char *k, int kind) {
+    for (int i = 0; k && i < m->n; i++) if (m->e[i].kind == kind && !strcmp(m->e[i].key, k)) return &m->e[i];
+    return NULL;
+}
+static void md_assign(MediaData *dst, const MediaData *src) {  // (a deep copy; dst's own entries freed first)
+    if (dst == src) return;
+    md_clear(dst);
+    for (int i = 0; i < src->n; i++) {
+        dst->e[i] = src->e[i];
+        dst->e[i].key = strdup(src->e[i].key);
+        dst->e[i].sval = src->e[i].sval ? strdup(src->e[i].sval) : NULL;
+    }
+    dst->n = src->n;
+    dst->codecpar = src->codecpar;
 }
 
 HLE_FUNC("_ZN5movie9MediaDataC1Ev", md_ctor) { *(uint64_t *)(uintptr_t)c->x[0] = (uint64_t)(uintptr_t)calloc(1, sizeof(MediaData)); }
 HLE_FUNC("_ZN5movie9MediaDataC1ERKS0_", md_copy) {
     MediaData *src = md(c->x[1]), *dst = calloc(1, sizeof(MediaData));
-    for (int i = 0; i < src->n; i++) {
-        dst->e[i].key = strdup(src->e[i].key);
-        dst->e[i].sval = src->e[i].sval ? strdup(src->e[i].sval) : NULL;
-        dst->e[i].ival = src->e[i].ival;
-        dst->e[i].is_str = src->e[i].is_str;
-    }
-    dst->n = src->n;
-    dst->codecpar = src->codecpar;
+    md_assign(dst, src);
     *(uint64_t *)(uintptr_t)c->x[0] = (uint64_t)(uintptr_t)dst;
 }
 HLE_FUNC("_ZN5movie9MediaDataD1Ev", md_dtor) {
@@ -74,7 +93,11 @@ HLE_FUNC("_ZNK5movie9MediaData9FindInt32EPKcPi", md_find_int32) {
     MediaData *m = md(c->x[0]);
     const char *k = (const char *)(uintptr_t)c->x[1];
     for (int i = 0; i < m->n; i++)
-        if (!m->e[i].is_str && !strcmp(m->e[i].key, k)) { *(int32_t *)(uintptr_t)c->x[2] = (int32_t)m->e[i].ival; c->x[0] = 1; return; }
+        if ((m->e[i].kind == MD_INT || m->e[i].kind == MD_INT64) && !strcmp(m->e[i].key, k)) {
+            *(int32_t *)(uintptr_t)c->x[2] = (int32_t)m->e[i].ival;
+            c->x[0] = 1;
+            return;
+        }
     c->x[0] = 0;
 }
 HLE_FUNC("_ZNK5movie9MediaData10FindStringEPKcPS2_", md_find_string) {
@@ -84,6 +107,89 @@ HLE_FUNC("_ZNK5movie9MediaData10FindStringEPKcPS2_", md_find_string) {
         if (m->e[i].is_str && !strcmp(m->e[i].key, k)) { *(uint64_t *)(uintptr_t)c->x[2] = (uint64_t)(uintptr_t)m->e[i].sval; c->x[0] = 1; return; }
     c->x[0] = 0;
 }
+
+// The rest of movie::MediaData. Our MediaData is an 8-byte handle to the host object above; the game's own versions of
+// these treat it as the SDK's NnMediaData (2.5 KB, its item count at +0xa00) - DKCR's video player copies one with
+// operator= when the title's attract movie starts: it read past our object and followed a stray pointer (a crash at
+// render scales above the window's, where that memory was no longer zero).
+#define MD_KEY ((const char *)(uintptr_t)c->x[1])
+HLE_FUNC("_ZN5movie9MediaDataaSERKS0_", md_assign_hle) { md_assign(md(c->x[0]), md(c->x[1])); }
+HLE_FUNC("_ZN5movie9MediaData8SetInt32EPKci", md_set_int32) { if (MD_KEY) md_set_int(md(c->x[0]), MD_KEY, (int32_t)c->x[2]); }
+HLE_FUNC("_ZN5movie9MediaData8SetInt64EPKcl", md_set_int64) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_INT64);
+    if (e) e->ival = (int64_t)c->x[2];
+}
+HLE_FUNC("_ZN5movie9MediaData8SetFloatEPKcf", md_set_float) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_FLOAT);
+    if (e) e->dval = *(float *)&c->v[0];
+}
+HLE_FUNC("_ZN5movie9MediaData9SetDoubleEPKcd", md_set_double) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_DOUBLE);
+    if (e) e->dval = *(double *)&c->v[0];
+}
+HLE_FUNC("_ZN5movie9MediaData9SetStringEPKcS2_", md_set_string) {
+    if (MD_KEY) md_set_str(md(c->x[0]), MD_KEY, (const char *)(uintptr_t)c->x[2]);
+}
+HLE_FUNC("_ZN5movie9MediaData7SetSizeEPKcm", md_set_size) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_SIZE);
+    if (e) e->ival = (int64_t)c->x[2];
+}
+HLE_FUNC("_ZN5movie9MediaData10SetPointerEPKcPv", md_set_pointer) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_PTR);
+    if (e) e->ival = (int64_t)c->x[2];
+}
+HLE_FUNC("_ZN5movie9MediaData9SetBufferEPKcPNS_6BufferE", md_set_buffer) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_BUF);
+    if (e) e->ival = (int64_t)c->x[2];
+}
+HLE_FUNC("_ZN5movie9MediaData7SetRectEPKciiii", md_set_rect) {
+    MdEntry *e = md_set_kind(md(c->x[0]), MD_KEY, MD_RECT);
+    if (e) for (int i = 0; i < 4; i++) e->rect[i] = (int32_t)c->x[2 + i];
+}
+HLE_FUNC("_ZNK5movie9MediaData9FindInt64EPKcPl", md_find_int64) {
+    MediaData *m = md(c->x[0]);
+    const MdEntry *e = md_find(m, MD_KEY, MD_INT64);
+    if (!e) e = md_find(m, MD_KEY, MD_INT);
+    if (e && c->x[2]) *(int64_t *)(uintptr_t)c->x[2] = e->ival;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData9FindFloatEPKcPf", md_find_float) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_FLOAT);
+    if (e && c->x[2]) *(float *)(uintptr_t)c->x[2] = (float)e->dval;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData10FindDoubleEPKcPd", md_find_double) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_DOUBLE);
+    if (e && c->x[2]) *(double *)(uintptr_t)c->x[2] = e->dval;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData8FindSizeEPKcPm", md_find_size) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_SIZE);
+    if (e && c->x[2]) *(uint64_t *)(uintptr_t)c->x[2] = (uint64_t)e->ival;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData11FindPointerEPKcPPv", md_find_pointer) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_PTR);
+    if (e && c->x[2]) *(uint64_t *)(uintptr_t)c->x[2] = (uint64_t)e->ival;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData10FindBufferEPKcPPNS_6BufferE", md_find_buffer) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_BUF);
+    if (e && c->x[2]) *(uint64_t *)(uintptr_t)c->x[2] = (uint64_t)e->ival;
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData8FindRectEPKcPiS3_S3_S3_", md_find_rect) {
+    const MdEntry *e = md_find(md(c->x[0]), MD_KEY, MD_RECT);
+    for (int i = 0; e && i < 4; i++) if (c->x[2 + i]) *(int32_t *)(uintptr_t)c->x[2 + i] = e->rect[i];
+    c->x[0] = e != NULL;
+}
+HLE_FUNC("_ZNK5movie9MediaData8ContainsEPKc", md_contains) {
+    MediaData *m = md(c->x[0]);
+    bool found = false;
+    for (int i = 0; MD_KEY && i < m->n && !found; i++) found = !strcmp(m->e[i].key, MD_KEY);
+    c->x[0] = found;
+}
+HLE_FUNC("_ZNK5movie9MediaData12CountEntriesEv", md_count) { c->x[0] = (uint64_t)md(c->x[0])->n; }
 
 // ------------------------------------------------------------------ Buffer (opaque, <= 0x40 bytes)
 typedef struct {
