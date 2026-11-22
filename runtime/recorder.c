@@ -25,7 +25,7 @@
 #include "rt.h"
 #include "settings.h"
 
-#define NSLOTS 6
+#define NSLOTS 16  // (about a quarter second of frames: the encoder catching up after a slow moment)
 #define AUDIO_RATE 48000
 #define AUDIO_SOURCES 2
 #define AUDIO_LAG_NS 100000000ull  // (the sources' own pacing jitter: sound is taken this far behind the clock)
@@ -66,17 +66,21 @@ bool recorder_active(void) { return atomic_load(&g_on) || atomic_load(&g_startin
 const char *recorder_last_file(void) { return g_last_file; }
 const char *recorder_encoder(void) { return g_encoder_name; }
 
+// Every game frame (30 fps: every second one): the video is the game's frames one by one
 bool recorder_wants_frame(void) {
     if (!atomic_load(&g_on) || atomic_load(&g_stop)) return false;
-    return atomic_load(&g_slots[atomic_load(&g_slot_next) % NSLOTS].state) == 0;
+    static uint32_t n;
+    return fps >= 60 || (n++ & 1) == 0;
 }
 
 void recorder_video_frame(const uint8_t *px, uint32_t w, uint32_t h, uint32_t stride, bool bgr, uint64_t t_ns) {
     if (!atomic_load(&g_on) || atomic_load(&g_stop) || !w || !h) return;
     uint32_t i = atomic_load(&g_slot_next) % NSLOTS;
     Slot *s = &g_slots[i];
+    // (the encoder behind: wait for it rather than leave the frame out - up to 100 ms, then the frame is left out)
+    for (int tries = 0; atomic_load(&s->state) != 0 && tries < 100; tries++) SDL_DelayNS(1000000);
     int free_ = 0;
-    if (!atomic_compare_exchange_strong(&s->state, &free_, 1)) return;  // (the encoder is behind: this frame is dropped)
+    if (!atomic_compare_exchange_strong(&s->state, &free_, 1)) return;
     size_t need = (size_t)w * h * 4;
     if (!s->px || (size_t)s->w * s->h * 4 < need) {
         free(s->px);
@@ -115,9 +119,14 @@ static void write_packets(AVCodecContext *ctx, AVStream *st) {
     }
 }
 
+// Frame by frame: each frame is the one after the last (a constant frame rate, no frame left out). Only a real hitch -
+// the frame shown more than a frame late by the clock - skips numbers, so the video holds the frame as the game did
+// and the sound stays in step.
 static void encode_slot(Slot *s) {
-    int64_t pts = llround((double)(s->t_ns - t0) * fps / 1e9);
-    if (pts > last_pts) {
+    double at = (double)(int64_t)(s->t_ns - t0) * fps / 1e9;
+    int64_t pts = last_pts + 1;
+    if (at > (double)pts + 1.5) pts = (int64_t)floor(at);
+    {
         sws = sws_getCachedContext(sws, (int)s->w, (int)s->h, s->bgr ? AV_PIX_FMT_BGRA : AV_PIX_FMT_RGBA, vctx->width,
                                    vctx->height, vctx->pix_fmt, SWS_BILINEAR, NULL, NULL, NULL);
         if (sws && av_frame_make_writable(vframe) >= 0) {

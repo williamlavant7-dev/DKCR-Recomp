@@ -1445,9 +1445,10 @@ static void save_window_image(VkCommandBuffer cb, VkSpan *out) {
 }
 
 // ---- video recording (runtime/recorder.h): the window image before the overlay (no menu, no REC dot), copied into
-// one of a few host buffers and handed over once its submission is done - a frame or two later - so the game never
-// waits for it. With every buffer still in flight a frame is left out.
-#define REC_BUFS 3
+// one of a few host buffers and handed over once its submission is done - a frame or two later, so the game doesn't
+// wait for it. Every game frame is taken (frame by frame: the in-betweens of frame generation are left out); with
+// every buffer still in flight the oldest is waited for.
+#define REC_BUFS 4
 static struct { VkBuffer buf; VmaAllocation mem; uint8_t *ptr; uint64_t cap, seq, t_ns; uint32_t w, h; bool pending; } rec_buf[REC_BUFS];
 
 void renderer_window_size(int *w, int *h) { *w = (int)g_vk.sc_phys.width, *h = (int)g_vk.sc_phys.height; }
@@ -1467,7 +1468,13 @@ static void rec_capture(void) {
     if (!cur_frame.ok || g_vk.sc_quarter || !recorder_wants_frame()) return;
     int i = 0;
     while (i < REC_BUFS && rec_buf[i].pending) i++;
-    if (i == REC_BUFS) return;
+    if (i == REC_BUFS) {  // (all in flight: the oldest's submission is waited for)
+        int o = 0;
+        for (int k = 1; k < REC_BUFS; k++) if (rec_buf[k].seq < rec_buf[o].seq) o = k;
+        vk_wait_seq(rec_buf[o].seq);
+        rec_collect();
+        i = o;
+    }
     uint32_t w = g_vk.sc_phys.width, h = g_vk.sc_phys.height;
     uint64_t size = (uint64_t)w * h * 4;
     if (size > rec_buf[i].cap) {
@@ -1693,7 +1700,7 @@ static void ip_present_mid(TexBackend *b) {  // an in-between in b (the game's i
     if (vk_frame_begin(black)) {
         VkCommandBuffer cb = vk_cmd();
         vk_present_draw(cb, b, ip_place.vx, ip_place.vy, ip_place.vw, ip_place.vh, ip_place.pv);
-        rec_capture();
+        rec_collect();  // (an in-between: not in the video)
         menu_render((void *)cb, g_vk.sc_extent.width, g_vk.sc_extent.height);
         ip_space();
         vk_frame_end(NULL);
