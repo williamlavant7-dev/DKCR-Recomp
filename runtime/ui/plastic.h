@@ -1,4 +1,4 @@
-// The settings menus' look (runtime/ui/plastic.mm): a paper panel in a brown moulded frame, rounded plastic rows, tabs
+// The settings menus' look (runtime/ui/plastic.mm): a jungle-green panel in a wooden frame, wooden plank rows, tabs
 // and buttons, recessed wells. Each piece is drawn by our own small shader (Metal, or Vulkan: runtime/nvn/vulkan/
 // plastic_vk.c) as an ImGui draw callback, under the text drawn after it. Used by the in-game menu and the start
 // screen's Settings / game files windows; nothing runs while they're closed.

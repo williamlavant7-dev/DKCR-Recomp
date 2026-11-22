@@ -29,42 +29,40 @@ const PlasticTheme &plastic_theme(void) {
     static bool init;
     if (!init) {
         init = true;
-        // the item screen's colours (pause menu): olive-brown paper in patches (the panel), in an olive frame with a
-        // khaki-gold inner edge; rows, buttons and tabs terracotta in a khaki-gold rim (cream text), the selection pale
-        // gold in a lighter gold rim (dark brown text), Delete / warnings a muted red. The terracotta is a little
-        // darker than the item screen's (#A57955) so cream text keeps 4.5:1.
-        t.panel = hex(0x433110, 0.78f);   // (the patches: panel <-> panel2, about #493812 on average)
-        t.panel2 = hex(0x4F4017, 0.78f);
-        t.inset = hex(0x3D3213, 0.72f);
-        t.frame = hex(0x4F5231);
-        t.frame_inner = hex(0xAA9B67);
-        t.row = hex(0x836044);
-        t.row_sel = hex(0xE5C589);
-        t.row_mark = hex(0x6E5220);  // (the category shown beside its list, the cursor elsewhere; a tab under the mouse)
-        t.row_hot = hex(0xE5C589);   // (ImGui's own buttons under the cursor: as the selection, dark text)
-        t.button = hex(0x836044);
-        t.danger = hex(0x8A3A2C);
-        t.tab = hex(0x75563B);
-        t.tab_sel = hex(0xE5C589);
-        // a tab under the cursor or the mouse (not the page shown): lit, a step short of the shown page's gold, with its
-        // dark text - it was darker than the other tabs (user 2026-11-12: as the menu bar's entries light up)
-        t.tab_hot = hex(0xC9A86E);
-        t.ring = hex(0xAA9B67);
-        t.ring_sel = hex(0xECD78E);
-        t.text = hex32(0xFFF3DC);
-        t.text_dim = hex32(0xC9B691);
+        // DKCR Recomp's jungle look (our own art, in the style of the game's menus): a deep jungle-green panel in
+        // patches, in a dark wooden frame with a light wood edge; rows, buttons and tabs are wooden planks with a teal
+        // zig-zag trim (plastic_pill), the selection banana yellow with a bright yellow trim and dark brown text;
+        // titles and section heads banana yellow. Cream text on the planks keeps 4.5:1.
+        t.panel = hex(0x1E3B1C, 0.88f);   // (the patches: panel <-> panel2)
+        t.panel2 = hex(0x29502A, 0.88f);
+        t.inset = hex(0x15301A, 0.80f);
+        t.frame = hex(0x5A3214);
+        t.frame_inner = hex(0xC98B3E);
+        t.row = hex(0x8A5025);
+        t.row_sel = hex(0xF2C230);
+        t.row_mark = hex(0x6A3E1C);  // (the category shown beside its list, the cursor elsewhere; a tab under the mouse)
+        t.row_hot = hex(0xF2C230);   // (ImGui's own buttons under the cursor: as the selection, dark text)
+        t.button = hex(0x8A5025);
+        t.danger = hex(0x9A2E22);
+        t.tab = hex(0x6E4220);
+        t.tab_sel = hex(0xF2C230);
+        t.tab_hot = hex(0xD9A33A);  // (a tab under the cursor or the mouse: lit, a step short of the shown page's yellow)
+        t.ring = hex(0x2E9C95);     // (the game's teal plank trim)
+        t.ring_sel = hex(0xFFE066);
+        t.text = hex32(0xFFF5E1);
+        t.text_dim = hex32(0xD7C39B);
         t.text_sel = hex32(0x3A2410);
-        t.text_button = hex32(0xFFF3DC);
-        t.section = hex32(0xE5C589);
-        t.value = hex32(0xFFF3DC);
-        t.value_changed = hex32(0xFFEDB0);
+        t.text_button = hex32(0xFFF5E1);
+        t.section = hex32(0xFFD23F);
+        t.value = hex32(0xFFF5E1);
+        t.value_changed = hex32(0xFFE9A0);
         t.warn = hex32(0xF2A48C);
-        t.title = hex32(0xECD78E);
-        t.arrow = hex32(0xF0DC9A);
+        t.title = hex32(0xFFD23F);
+        t.arrow = hex32(0xFFD23F);
         t.ring_w = 4.0f;
         t.pill_gloss = 0.18f;  // (a soft sheen: a bright one washed out the cream text)
         t.edge = 0.08f;
-        t.mottle = 150.0f;
+        t.mottle = 190.0f;
         t.dim = 0.45f;
         t.glare = 0.14f;
     }
@@ -594,6 +592,24 @@ void plastic_pill(ImDrawList *dl, ImVec2 a, ImVec2 b, float radius, ImVec4 col, 
     ring.w = col.w;  // (a faded piece: its rim too)
     float w = fminf(t.ring_w * scale, (b.y - a.y) * 0.12f);
     plastic_add(dl, a, b, radius, col, PK_PILL, depth, gloss * t.pill_gloss, ring, w, t.edge);
+    // the planks' zig-zag trim along their top and bottom edges (as the game's menu planks), in the rim's colour,
+    // between the rounded ends; over the piece, under its text
+    float h = b.y - a.y;
+    if (h < 18 * scale || b.x - a.x < 4 * radius) return;
+    float amp = fmaxf(2.0f, fminf(3.2f * scale, h * 0.07f)), period = amp * 2.6f, thick = fmaxf(1.0f, 1.6f * scale);
+    float x0 = a.x + radius * 0.9f, x1 = b.x - radius * 0.9f;
+    int n = (int)((x1 - x0) / period);
+    if (n < 2) return;
+    period = (x1 - x0) / (float)n;
+    ImU32 c = ImGui::ColorConvertFloat4ToU32(ImVec4(ring.x, ring.y, ring.z, ring.w * 0.9f));
+    for (int edge = 0; edge < 2; edge++) {
+        float y = edge == 0 ? a.y + w + amp + 1.5f * scale : b.y - w - amp - 1.5f * scale;
+        ImVec2 pts[1024];
+        int k = 0;
+        for (int i = 0; i <= 2 * n && k < 1024; i++)
+            pts[k++] = ImVec2(x0 + period * 0.5f * (float)i, y + ((i & 1) ? amp : -amp) * (edge == 0 ? 1.0f : -1.0f));
+        dl->AddPolyline(pts, k, c, ImDrawFlags_None, thick);
+    }
 }
 
 void plastic_panel(ImDrawList *dl, ImVec2 a, ImVec2 b, float scale) {
