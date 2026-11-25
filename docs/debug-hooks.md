@@ -240,6 +240,7 @@ The per-GPU default switches are explained, with the GPUs they were tested on, i
 | `LARECOMP_RECORD_ENCODER` | name | Video recording: only that encoder (`h264_nvenc`, `h264_amf`, `h264_qsv`, `h264_mf`, `libx264`, `mpeg4`), e.g. `h264_mf` as the release FFmpeg has. |
 | `LARECOMP_RECORD_AT` | frame:frames | A video recording (runtime/recorder.c) from that frame, that many frames long (default 600), into the data folder's `recordings/`. |
 | `LARECOMP_VK_BUILD_WAIT_MS` | ms | Vulkan: how long a frame's draws may wait in all for programs and pipelines still building before they are skipped (default 10; 0: skip at once, the old behaviour). |
+| `LARECOMP_VK_CS_WAIT_MS` | ms | Vulkan: how long a compute dispatch waits for its shader still building before it is skipped (default 2000; 0: skip at once). |
 | `LARECOMP_VK_PIPELINE_CACHE` | 0 | Start with an empty Vulkan pipeline cache (the saved one is written over as usual). The Android emulator hangs loading a large one. |
 | `LARECOMP_VK_VALIDATION` | 1 | Turn the Khronos validation layer on (it must be installed) and log its warnings and errors (first 500). |
 | `LARECOMP_VK_VALIDATION_STOP` | 1 | As `LARECOMP_VK_VALIDATION`, and exit at the first validation error. |
