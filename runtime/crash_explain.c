@@ -16,7 +16,7 @@ static uint64_t g_pc;      // a crash's host pc (0: a FATAL)
 int rt_romfs_files = -1;   // the game's own RomFS files (runtime/services/fs.c; -1: not read yet)
 uint64_t rt_romfs_bytes;   // their sizes summed (issue #391: one damaged file, every file there)
 int rt_romfs_missing;      // the game's files not found by name and size (#391: a renamed file keeps count and bytes)
-enum { ROMFS_FILES = 3836 };  // (every supported version: runtime/ui/launcher.mm counts the same)
+enum { ROMFS_FILES = 362 };  // (DKCR HD RomFS: runtime/ui/launcher.mm counts the same)
 
 void rt_fatal_msg(const char *fmt, ...) {
     char b[512];

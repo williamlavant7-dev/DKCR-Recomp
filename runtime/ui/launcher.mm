@@ -249,7 +249,7 @@ static bool file_exists(const std::string &p) {
 // With check (base: where the path inside romfs starts), the files that aren't the game's are named in the log, the
 // first ROMFS_ODD_LOGGED of them (check->odd counts them all), and copies of the game code at the romfs root
 // (game_romfs_exefs_copy, game: the game folder) are left out of the count and the bytes (check->copies).
-enum { ROMFS_FILES = 3836, ROMFS_ODD_LOGGED = 20 };
+enum { ROMFS_FILES = 362, ROMFS_ODD_LOGGED = 20 };  // DKCR HD 1.0.0 / 1.0.1 / 1.1.0 RomFS
 struct RomfsCheckWalk { GameRomfsCheck *check; size_t base; int odd; const char *game; int copies; };
 static int count_files(const std::string &dir, int depth = 0, uint64_t *bytes = NULL, RomfsCheckWalk *check = NULL) {
     DIR *d = depth < 12 ? opendir(dir.c_str()) : NULL;
@@ -354,7 +354,7 @@ static std::string check_copied_files(const std::string &root) {
         refused_main(root + "/exefs");  // (the log line)
         return LN("Wrong version of the game");
     }
-    if (!file_exists(root + "/romfs/region_common")) return incomplete(0);
+    if (!file_exists(root + "/romfs/Data")) return incomplete(0);
     if (g_romfs_count < 0) {
         g_romfs_bytes = 0;
         const GameVersion *v = game_version_of(root.c_str());
