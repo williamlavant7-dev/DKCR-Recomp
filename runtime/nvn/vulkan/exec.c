@@ -5759,8 +5759,11 @@ static bool guest_direct_(int kind, uint64_t addr, uint64_t size, VkBuffer *buf,
         uint64_t o = addr - HEAP_BASE;
         if (!size || o + size > HEAP_MAX) return false;
         int k = (int)(o >> gc_shift);
-        if ((int)((o + size - 1) >> gc_shift) != k || !gmem_covers(o, size)) return false;  // (crossing chunks: copied)
+        if (!gmem_covers(o, size)) return false;
         if (vcache_lookup(addr, size, buf, off)) return true;
+        // Crossing chunks: no one buffer holds it in place - copied (the vertex cache above takes such ranges: DKCR's
+        // world map binds a 4 MB vertex buffer across a 16 MB chunk boundary, ~2.5 MB copied a draw, 8 GB a second)
+        if ((int)((o + size - 1) >> gc_shift) != k) return false;
         heap_clean(addr, size);
         *buf = gc[k].buf;
         *off = o - ((uint64_t)k << gc_shift);
