@@ -132,12 +132,32 @@ static void encode_slot(Slot *s) {
     int64_t pts = last_pts + 1;
     if (at > (double)pts + 1.5) pts = (int64_t)floor(at);
     {
-        sws = sws_getCachedContext(sws, (int)s->w, (int)s->h, s->bgr ? AV_PIX_FMT_BGRA : AV_PIX_FMT_RGBA, vctx->width,
-                                   vctx->height, vctx->pix_fmt, SWS_BILINEAR, NULL, NULL, NULL);
+        // the window fitted into the video, keeping its shape: black bars at the sides or top and bottom (the picture
+        // at a 16-pixel step across and an even one down, for 4:2:0 and swscale's aligned rows)
+        int vw = vctx->width, vh = vctx->height, dw = vw, dh = vh;
+        bool planar = vctx->pix_fmt == AV_PIX_FMT_NV12 || vctx->pix_fmt == AV_PIX_FMT_YUV420P;
+        if (planar && (uint64_t)s->w * vh > (uint64_t)vw * s->h) dh = (int)((uint64_t)vw * s->h / s->w) & ~1;
+        else if (planar && (uint64_t)s->w * vh < (uint64_t)vw * s->h) dw = (int)((uint64_t)vh * s->w / s->h) & ~31;
+        if (dw < 32) dw = vw;
+        if (dh < 2) dh = vh;
+        int ox = (vw - dw) / 2 & ~15, oy = (vh - dh) / 2 & ~1;
+        sws = sws_getCachedContext(sws, (int)s->w, (int)s->h, s->bgr ? AV_PIX_FMT_BGRA : AV_PIX_FMT_RGBA, dw, dh,
+                                   vctx->pix_fmt, SWS_BILINEAR, NULL, NULL, NULL);
         if (sws && av_frame_make_writable(vframe) >= 0) {
             const uint8_t *src[1] = {s->px};
             int src_stride[1] = {(int)s->stride};
-            sws_scale(sws, src, src_stride, 0, (int)s->h, vframe->data, vframe->linesize);
+            uint8_t *dst[4] = {vframe->data[0], vframe->data[1], vframe->data[2], NULL};
+            if (dw != vw || dh != vh) {  // (bars: limited-range black, Y 16 and U / V 128, then the picture inside)
+                for (int y = 0; y < vh; y++) memset(vframe->data[0] + (size_t)y * vframe->linesize[0], 16, (size_t)vw);
+                for (int p = 1; p <= (vctx->pix_fmt == AV_PIX_FMT_NV12 ? 1 : 2); p++)
+                    for (int y = 0; y < vh / 2; y++)
+                        memset(vframe->data[p] + (size_t)y * vframe->linesize[p], 128,
+                               (size_t)(vctx->pix_fmt == AV_PIX_FMT_NV12 ? vw : vw / 2));
+                dst[0] += (size_t)oy * vframe->linesize[0] + ox;
+                if (vctx->pix_fmt == AV_PIX_FMT_NV12) dst[1] += (size_t)(oy / 2) * vframe->linesize[1] + ox;
+                else for (int p = 1; p <= 2; p++) dst[p] += (size_t)(oy / 2) * vframe->linesize[p] + ox / 2;
+            }
+            sws_scale(sws, src, src_stride, 0, (int)s->h, dst, vframe->linesize);
             vframe->pts = pts;
             last_pts = pts;
             if (avcodec_send_frame(vctx, vframe) >= 0) write_packets(vctx, vst);
@@ -339,15 +359,11 @@ static bool setup(void) {
     for (char *p = prefix; *p; p++) if (strchr("\\/:*?\"<>|", *p) || (unsigned char)*p < 0x20) *p = '_';
     snprintf(path, sizeof path, "%s/%s %s.%s", dir, prefix, when, mkv ? "mkv" : "mp4");
     fps = g_settings.rec_fps == 1 ? 30 : 60;
-    // the window's size, or Output size's height (the window's shape); even sizes (4:2:0)
-    int w = 0, h = 0;
-    extern void renderer_window_size(int *w, int *h);
-    renderer_window_size(&w, &h);
-    if (w < 16 || h < 16) w = 1280, h = 720;
-    static const int out_h[] = {0, 2160, 1440, 1080, 720};  // (REC_SIZE_*: 0 the window's)
+    // Resolution: a 16:9 video of that size whatever the window's (encode_slot fits the window in, with black bars
+    // where its shape differs); 0, the window's size in older settings, is 1080p
+    static const int out_h[] = {1080, 2160, 1440, 1080, 720};
     int sz = g_settings.rec_size >= 0 && g_settings.rec_size < 5 ? g_settings.rec_size : 0;
-    if (out_h[sz]) w = (int)lround((double)w * out_h[sz] / h), h = out_h[sz];
-    w &= ~1, h &= ~1;
+    int h = out_h[sz], w = h * 16 / 9;
     // a bitrate for the encoders that want one beside their quality setting (Media Foundation's, a ceiling): 16 Mbit/s
     // at 1080p60, scaled to the size and frame rate
     int64_t bitrate = (int64_t)(16e6 * ((double)w * h / (1920.0 * 1080.0)) * (fps / 60.0));

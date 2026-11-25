@@ -57,6 +57,7 @@ Settings g_settings = {
     .movie_audio = true,
     .rec_quality = 1,
     .rec_audio_kbps = 1,
+    .rec_size = 3,
     .rec_cq = 20,
     .rec_speed = 1,
     .rec_prefix = "DKCR Recording",
@@ -208,13 +209,13 @@ void settings_load(void) {
     loaded = true;
     FILE *f = fopen(SETTINGS_FILE, "r");
     if (!f) return;
-    char line[256];
+    char line[1200];  // (room for a long folder: record_folder)
     bool tip_key = false, aspect_key = false;
     while (fgets(line, sizeof line, f)) {
         line[strcspn(line, "\r\n")] = 0;
         char key[64];
-        char val[128] = {0};
-        int fields = sscanf(line, " %63[^= ] = %127[^\n]", key, val);
+        char val[1100] = {0};
+        int fields = sscanf(line, " %63[^= ] = %1099[^\n]", key, val);
         if (fields < 1) continue;
         if (fields != 2) continue;
         if (!strcmp(key, "aspect")) g_settings.aspect = !strcmp(val, "original") ? ASPECT_ORIGINAL : ASPECT_UNLOCKED;
@@ -244,7 +245,7 @@ void settings_load(void) {
         }
         else if (!strcmp(key, "record_size")) {
             static const int hh[] = {0, 2160, 1440, 1080, 720};
-            g_settings.rec_size = 0;
+            g_settings.rec_size = 3;  // ("window", from before the fixed sizes: 1080p)
             for (int i = 1; i < 5; i++) if (atoi(val) == hh[i]) g_settings.rec_size = i;
         }
         else if (!strcmp(key, "record_cq")) {
@@ -392,7 +393,7 @@ void settings_save(void) {
         static const int m[] = {0, 4, 8, 12, 16, 24, 32, 50, 80}, hh[] = {0, 2160, 1440, 1080, 720}, k[] = {128, 192, 256, 320};
         int ei = g_settings.rec_encoder >= 0 && g_settings.rec_encoder < 7 ? g_settings.rec_encoder : 0;
         int bi = g_settings.rec_bitrate >= 0 && g_settings.rec_bitrate < 9 ? g_settings.rec_bitrate : 0;
-        int si = g_settings.rec_size >= 0 && g_settings.rec_size < 5 ? g_settings.rec_size : 0;
+        int si = g_settings.rec_size >= 1 && g_settings.rec_size < 5 ? g_settings.rec_size : 3;
         int ki = g_settings.rec_audio_kbps >= 0 && g_settings.rec_audio_kbps < 4 ? g_settings.rec_audio_kbps : 1;
         fprintf(f, "record_folder = %s\n", g_settings.rec_dir);
         fprintf(f, "record_codec = %s\n", g_settings.rec_codec == 1 ? "hevc" : "h264");

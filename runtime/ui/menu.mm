@@ -886,7 +886,8 @@ static void tab_recording(void) {
     static const char *const codecs[] = {LN("H.264"), LN("H.265 (HEVC)")};
     static const char *const encoders[] = {LN("Auto"), LN("NVIDIA GPU (NVENC)"), LN("AMD GPU (AMF)"), LN("Intel GPU (Quick Sync)"),
                                            LN("Windows (Media Foundation)"), LN("CPU (x264 / x265)"), LN("MPEG-4 (basic)")};
-    static const char *const sizes[] = {LN("Window"), LN("4K"), LN("1440p"), LN("1080p"), LN("720p")};
+    static const char *const sizes[] = {LN("720p"), LN("1080p"), LN("1440p"), LN("4K")};
+    static const int size_of[] = {4, 3, 2, 1};  // (display order -> rec_size)
     static const char *const rates[] = {LN("60 fps"), LN("30 fps")};
     static const char *const speeds[] = {LN("Fastest"), LN("Fast"), LN("Balanced"), LN("Smallest")};
     static const char *const formats[] = {LN("MP4"), LN("MKV")};
@@ -921,8 +922,14 @@ static void tab_recording(void) {
     // (the options apply from the next recording: greyed out while one runs)
     opt_section("Video");
     if (on) opt_disable_next();
-    opt_choice("Resolution", &g_settings.rec_size, sizes, 5, 0,
-               "The video's size. Window records what you see; the others scale it, keeping its shape.");
+    {   // a fixed 16:9 size whatever the window's (a window of another shape gets black bars in the video)
+        int si = 1;
+        for (int i = 0; i < 4; i++) if (size_of[i] == g_settings.rec_size) si = i;
+        if (opt_choice("Resolution", &si, sizes, 4, 1,
+                       "The video's size, whatever the size of the window: 720p is 1280 x 720, 1080p 1920 x 1080, 1440p "
+                       "2560 x 1440 and 4K 3840 x 2160. A window of another shape gets black bars.", false))
+            g_settings.rec_size = size_of[si];
+    }
     if (on) opt_disable_next();
     opt_choice("Frame rate", &g_settings.rec_fps, rates, 2, 0, "Frames per second in the video: every game frame at 60.");
     if (on) opt_disable_next();
@@ -957,10 +964,17 @@ static void tab_recording(void) {
     if (opt_text("File name starts with", g_settings.rec_prefix, sizeof g_settings.rec_prefix, "DKCR Recording",
                  "The start of each video's name. The date and time follow it."))
         settings_save();
+    char where[1400];  // (the full path, also for the default: the recordings folder in the data folder)
+    if (g_settings.rec_dir[0]) snprintf(where, sizeof where, "%s", g_settings.rec_dir);
+    else snprintf(where, sizeof where, "%s/recordings", rt_data_root());
+#ifdef _WIN32
+    for (char *p = where; *p; p++) if (*p == '/') *p = '\\';
+#endif
+    opt_shown_next();
+    opt_action("Save folder", where, "Where videos are saved.", true, false);
     if (on) opt_disable_next();
     opt_button_next();
-    if (opt_action("Save folder", g_settings.rec_dir[0] ? g_settings.rec_dir : "recordings",
-                   "Where videos are saved. Choose any folder; the default is the recordings folder next to the program.", true, false))
+    if (opt_action("Choose folder", "", "Pick any folder for your videos."))
         SDL_ShowOpenFolderDialog(rec_folder_picked, NULL, SDL_GetKeyboardFocus(), g_settings.rec_dir[0] ? g_settings.rec_dir : NULL, false);
     if (g_settings.rec_dir[0]) {
         if (on) opt_disable_next();

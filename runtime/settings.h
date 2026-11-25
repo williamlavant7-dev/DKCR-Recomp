@@ -58,7 +58,7 @@ typedef struct {
     int rec_cq;          // Quality (CQ): constant quality 1..51, lower is sharper and bigger
     int rec_speed;       // Speed / Size: 0 Fastest, 1 Fast, 2 Balanced, 3 Smallest (the encoder's preset)
     char rec_prefix[64]; // the start of a video's file name (the date and time follow)
-    int rec_size;        // output height: 0 the window's, 1 2160, 2 1440, 3 1080, 4 720
+    int rec_size;        // the video's height (16:9): 1 2160, 2 1440, 3 1080, 4 720 (0: the window's in older files: 1080)
     int rec_container;   // 0 MP4, 1 MKV
     int rec_audio_kbps;  // 0 128, 1 192, 2 256, 3 320 kbit/s
     bool rec_audio;      // the game's sound in the recording
