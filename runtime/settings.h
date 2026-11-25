@@ -29,6 +29,8 @@ extern const char *const g_language_endonyms[N_LANGUAGES];  // each in its own l
 
 
 enum { AUDIO_OUT_STEREO, AUDIO_OUT_51, N_AUDIO_OUTS };
+// Frame Generation (runtime/nvn/interp.c): off, as many in-betweens as the display shows, or one (120 fps)
+enum { FRAME_GEN_OFF = 0, FRAME_GEN_DISPLAY = 1, FRAME_GEN_120 = 2 };
 enum { FPS_OFF, FPS_TOP_LEFT, FPS_TOP_RIGHT, FPS_BOTTOM_LEFT, FPS_BOTTOM_RIGHT, N_FPS_CORNERS };
 
 typedef struct {
@@ -60,7 +62,7 @@ typedef struct {
     int rec_audio_kbps;  // 0 128, 1 192, 2 256, 3 320 kbit/s
     bool rec_audio;      // the game's sound in the recording
     bool rec_dot;        // the red REC dot in a corner while recording (never in the video)
-    bool frame_interp;   // Frame Generation: extra images between the game's frames (runtime/nvn/interp.c)
+    int frame_interp;    // FRAME_GEN_*: extra images between the game's frames (runtime/nvn/interp.c)
     bool metal_hud;      // macOS: Apple's Metal Performance HUD over the game (runtime/nvn/metal.m metal_hud_apply)
     int show_fps;        // FPS_*: the frame rate counter's corner (FPS_OFF: none)
     int fps_corner;      // FPS_* (not off): the corner Show FPS goes back to when turned on (the menu's Position row)

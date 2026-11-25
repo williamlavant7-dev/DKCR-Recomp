@@ -46,6 +46,7 @@ window at that frame to `build/window.png` and exits.
 | `LARECOMP_NO_MOVIE_AUDIO` | 1 | Play movies without their audio track. |
 | `LARECOMP_WINDOW` | `WxH` | Window size in points (default: the remembered size, else 1280x720). Also stops fullscreen. |
 | `LARECOMP_WINDOW_POS` | `x,y` | Window position. |
+| `LARECOMP_WINDOW_DISPLAY` | index | Vulkan: centre the window on that display (0: the first SDL lists) and log every display's size and refresh rate. |
 | `LARECOMP_HIDDEN` | 1 | Never show the window: renders off screen without taking focus. The game also keeps running when unfocused. |
 | `LARECOMP_SCALE` | number | Force the render height in units of 1080 lines (`0.5` = 540 lines, `1` = 1080, `2` = 2160). Overrides the resolution setting. |
 | `LARECOMP_WINDOW_SHOT` | frame | Save the final window image (game and menus) at that frame. |

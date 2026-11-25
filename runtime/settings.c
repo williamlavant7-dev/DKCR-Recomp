@@ -262,7 +262,10 @@ void settings_load(void) {
             for (int i = 1; i < N_FPS_CORNERS; i++)
                 if (!strcmp(val, corners[i])) g_settings.fps_corner = i;
         }
-        else if (!strcmp(key, "frame_interp")) g_settings.frame_interp = atoi(val) != 0;
+        else if (!strcmp(key, "frame_interp")) {  // (0 / 1 before the 120 fps choice: 1 is the display's rate, as it was)
+            int v = atoi(val);
+            g_settings.frame_interp = v >= FRAME_GEN_OFF && v <= FRAME_GEN_120 ? v : FRAME_GEN_OFF;
+        }
         else if (!strcmp(key, "metal_hud")) g_settings.metal_hud = atoi(val) != 0;
         else if (!strcmp(key, "resolution")) {  // (auto: never chosen, the GPU's default)
             int n = atoi(val);

@@ -828,9 +828,11 @@ static void tab_display(void) {
                "edges. Off removes them.");
 
     opt_section("Experimental");  // (user 2026-11-12)
-    opt_toggle("Frame Generation", &g_settings.frame_interp, false,
-               "Draws extra images between the game's frames for smoother motion, up to your display's refresh rate. On "
-               "a 120 Hz display the game shows 120 fps. Some visual glitches are possible.");
+    static const char *frame_gen[] = {LN("Off"), LN("Up to display"), LN("120 fps")};
+    opt_choice("Frame Generation", &g_settings.frame_interp, frame_gen, 3, FRAME_GEN_OFF,
+               "Draws extra images between the game's frames for smoother motion. The game itself stays at 60. 120 fps "
+               "adds one image a frame; Up to display adds as many as your display's refresh rate allows. Needs a "
+               "display at 120 Hz or more. Some visual glitches are possible.");
     opt_end();
 }
 
