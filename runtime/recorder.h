@@ -16,6 +16,7 @@ void recorder_toggle(void);
 bool recorder_active(void);
 const char *recorder_last_file(void);  // the latest recording's file name ("" before any)
 const char *recorder_encoder(void);    // the video encoder in use or last used ("" before any)
+int recorder_seconds(void);           // how long the recording running now has run (0: none)
 const char *recorder_dir(void);        // where videos go: Settings > Recording > Save folder, or recordings/
 
 // Settings > Recording > Encoder (settings.h rec_encoder): Auto tries the GPU's first, then the rest in this order

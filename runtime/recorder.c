@@ -60,11 +60,16 @@ static AVFrame *vframe, *aframe;
 static AVPacket *pkt;
 static int fps;
 static uint64_t t0;
+static _Atomic uint64_t g_started_ns;  // (the status row's time)
 static int64_t last_pts, audio_done;
 
 bool recorder_active(void) { return atomic_load(&g_on) || atomic_load(&g_starting); }
 const char *recorder_last_file(void) { return g_last_file; }
 const char *recorder_encoder(void) { return g_encoder_name; }
+int recorder_seconds(void) {
+    uint64_t s = atomic_load(&g_started_ns);
+    return atomic_load(&g_on) && s ? (int)((plat_now_ns() - s) / 1000000000ull) : 0;
+}
 
 // Every game frame (30 fps: every second one): the video is the game's frames one by one
 bool recorder_wants_frame(void) {
@@ -191,6 +196,7 @@ static void *encoder_main(void *arg) {
     g_audio_on = actx != NULL;
     pthread_mutex_unlock(&g_audio_lock);
     atomic_store(&g_slot_next, 0);
+    atomic_store(&g_started_ns, plat_now_ns());
     atomic_store(&g_on, true);
     atomic_store(&g_starting, false);
     uint32_t next = 0;  // (slots are filled in order: taken in the same order)
@@ -243,6 +249,40 @@ static const char *const k_encoders[2][REC_ENC_N] = {
     {NULL, "hevc_nvenc", "hevc_amf", "hevc_qsv", "hevc_mf", "libx265", "mpeg4"},
 };
 
+// Quality (CQ) and Speed / Size in each encoder's own terms. CQ is the x264 CRF scale (1..51, lower is sharper);
+// Media Foundation counts quality the other way (0..100), MPEG-4 in quantisers (2..31).
+static void set_quality(AVCodecContext *ctx, const char *name) {
+    int cq = g_settings.rec_cq >= 1 && g_settings.rec_cq <= 51 ? g_settings.rec_cq : 20;
+    int sp = g_settings.rec_speed >= 0 && g_settings.rec_speed < 4 ? g_settings.rec_speed : 1;
+    void *o = ctx->priv_data;
+    if (strstr(name, "_nvenc")) {
+        static const char *const p[] = {"p1", "p3", "p5", "p7"};
+        av_opt_set(o, "preset", p[sp], 0);
+        av_opt_set(o, "rc", "vbr", 0);
+        av_opt_set_int(o, "cq", cq, 0);
+        ctx->bit_rate = 0;
+    } else if (strstr(name, "_amf")) {
+        static const char *const p[] = {"speed", "speed", "balanced", "quality"};
+        av_opt_set(o, "quality", p[sp], 0);
+        av_opt_set(o, "rc", "cqp", 0);
+        av_opt_set_int(o, "qp_i", cq, 0), av_opt_set_int(o, "qp_p", cq, 0);
+    } else if (strstr(name, "_qsv")) {
+        static const char *const p[] = {"veryfast", "faster", "medium", "slower"};
+        av_opt_set(o, "preset", p[sp], 0);
+        ctx->global_quality = cq;  // (ICQ)
+    } else if (strstr(name, "_mf")) {
+        av_opt_set(o, "rate_control", "quality", 0);
+        av_opt_set_int(o, "quality", cq * 2 >= 100 ? 0 : 100 - cq * 2, 0);
+    } else if (!strcmp(name, "libx264") || !strcmp(name, "libx265")) {
+        static const char *const p[] = {"ultrafast", "veryfast", "medium", "slow"};
+        av_opt_set(o, "preset", p[sp], 0);
+        av_opt_set_int(o, "crf", cq, 0);
+    } else {  // mpeg4
+        ctx->flags |= AV_CODEC_FLAG_QSCALE;
+        ctx->global_quality = FF_QP2LAMBDA * (2 + (cq - 1) * 29 / 50);
+    }
+}
+
 static AVCodecContext *open_video(int w, int h, int64_t bitrate, const AVCodec **used) {
     const char *force = getenv("LARECOMP_RECORD_ENCODER");  // (test: that encoder only, e.g. h264_mf as in the release)
     int codec = g_settings.rec_codec == 1, pick = g_settings.rec_encoder;
@@ -276,8 +316,7 @@ static AVCodecContext *open_video(int w, int h, int64_t bitrate, const AVCodec *
             if (!yuv) ctx->pix_fmt = fmts[0];
         }
         if (oc->oformat->flags & AVFMT_GLOBALHEADER) ctx->flags |= AV_CODEC_FLAG_GLOBAL_HEADER;
-        if (strstr(c->name, "_nvenc")) av_opt_set(ctx->priv_data, "preset", "p4", 0);
-        if (!strcmp(c->name, "libx264") || !strcmp(c->name, "libx265")) av_opt_set(ctx->priv_data, "preset", "veryfast", 0);
+        set_quality(ctx, c->name);
         if (avcodec_open2(ctx, c, NULL) == 0) { *used = c; return ctx; }
         LOG("[rec] encoder %s not usable here\n", c->name);
         avcodec_free_context(&ctx);
@@ -294,7 +333,11 @@ static bool setup(void) {
     char path[1200], when[64];
     time_t now = time(NULL);
     strftime(when, sizeof when, "%Y-%m-%d %H-%M-%S", localtime(&now));
-    snprintf(path, sizeof path, "%s/DKCR Recomp %s.%s", dir, when, mkv ? "mkv" : "mp4");
+    // the name's start (Settings > Recording > File name starts with), without characters a file name can't have
+    char prefix[64];
+    snprintf(prefix, sizeof prefix, "%s", g_settings.rec_prefix[0] ? g_settings.rec_prefix : "DKCR Recording");
+    for (char *p = prefix; *p; p++) if (strchr("\\/:*?\"<>|", *p) || (unsigned char)*p < 0x20) *p = '_';
+    snprintf(path, sizeof path, "%s/%s %s.%s", dir, prefix, when, mkv ? "mkv" : "mp4");
     fps = g_settings.rec_fps == 1 ? 30 : 60;
     // the window's size, or Output size's height (the window's shape); even sizes (4:2:0)
     int w = 0, h = 0;
@@ -305,11 +348,9 @@ static bool setup(void) {
     int sz = g_settings.rec_size >= 0 && g_settings.rec_size < 5 ? g_settings.rec_size : 0;
     if (out_h[sz]) w = (int)lround((double)w * out_h[sz] / h), h = out_h[sz];
     w &= ~1, h &= ~1;
-    // Bitrate: Auto is 16 Mbit/s at 1080p60, scaled to the size and frame rate; else the chosen one
-    static const int mbps[] = {0, 4, 8, 12, 16, 24, 32, 50, 80};
-    int bi = g_settings.rec_bitrate >= 0 && g_settings.rec_bitrate < 9 ? g_settings.rec_bitrate : 0;
-    int64_t bitrate = mbps[bi] ? (int64_t)mbps[bi] * 1000000
-                               : (int64_t)(16e6 * ((double)w * h / (1920.0 * 1080.0)) * (fps / 60.0));
+    // a bitrate for the encoders that want one beside their quality setting (Media Foundation's, a ceiling): 16 Mbit/s
+    // at 1080p60, scaled to the size and frame rate
+    int64_t bitrate = (int64_t)(16e6 * ((double)w * h / (1920.0 * 1080.0)) * (fps / 60.0));
     if (bitrate < 2000000) bitrate = 2000000;
     bool ok = avformat_alloc_output_context2(&oc, NULL, mkv ? "matroska" : "mp4", path) >= 0 && oc;
     const AVCodec *vc = NULL;
@@ -364,8 +405,8 @@ static bool setup(void) {
     }
     snprintf(g_last_file, sizeof g_last_file, "%s", path + strlen(dir) + 1);
     snprintf(g_encoder_name, sizeof g_encoder_name, "%s", vc->name);
-    LOG("[rec] recording to %s: %dx%d at %d fps, %s, %.0f Mbit/s%s\n", path, w, h, fps, vc->name, bitrate / 1e6,
-        actx ? ", with sound" : "");
+    LOG("[rec] recording to %s: %dx%d at %d fps, %s, CQ %d, speed %d%s\n", path, w, h, fps, vc->name, g_settings.rec_cq,
+        g_settings.rec_speed, actx ? ", with sound" : "");
     return true;
 }
 

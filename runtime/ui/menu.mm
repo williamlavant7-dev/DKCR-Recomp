@@ -884,25 +884,90 @@ static void SDLCALL rec_folder_picked(void *, const char *const *files, int) {
 }
 static void tab_recording(void) {
     static const char *const codecs[] = {LN("H.264"), LN("H.265 (HEVC)")};
-    static const char *const encoders[] = {LN("Auto"), LN("NVIDIA NVENC"), LN("AMD AMF"), LN("Intel Quick Sync"),
-                                           LN("Windows Media Foundation"), LN("Software (x264 / x265)"), LN("MPEG-4 (basic)")};
-    static const char *const bitrates[] = {LN("Auto"), LN("4 Mbit/s"), LN("8 Mbit/s"), LN("12 Mbit/s"), LN("16 Mbit/s"),
-                                           LN("24 Mbit/s"), LN("32 Mbit/s"), LN("50 Mbit/s"), LN("80 Mbit/s")};
-    static const char *const sizes[] = {LN("Same as window"), LN("2160p (4K)"), LN("1440p"), LN("1080p"), LN("720p")};
+    static const char *const encoders[] = {LN("Auto"), LN("NVIDIA GPU (NVENC)"), LN("AMD GPU (AMF)"), LN("Intel GPU (Quick Sync)"),
+                                           LN("Windows (Media Foundation)"), LN("CPU (x264 / x265)"), LN("MPEG-4 (basic)")};
+    static const char *const sizes[] = {LN("Window"), LN("4K"), LN("1440p"), LN("1080p"), LN("720p")};
     static const char *const rates[] = {LN("60 fps"), LN("30 fps")};
+    static const char *const speeds[] = {LN("Fastest"), LN("Fast"), LN("Balanced"), LN("Smallest")};
     static const char *const formats[] = {LN("MP4"), LN("MKV")};
-    static const char *const akbps[] = {LN("128 kbit/s"), LN("192 kbit/s"), LN("256 kbit/s"), LN("320 kbit/s")};
+    static const char *const akbps[] = {LN("128 kbps"), LN("192 kbps"), LN("256 kbps"), LN("320 kbps")};
+    static char cq_names[51][4];
+    static const char *cqs[51];
+    if (!cqs[0])
+        for (int i = 0; i < 51; i++) snprintf(cq_names[i], sizeof cq_names[i], "%d", i + 1), cqs[i] = cq_names[i];
     opt_begin("##recording", ImGui::GetFontSize() / 34);
-    opt_section("Recording");
     bool on = recorder_active();
+
+    opt_section("Recording");
     opt_button_next();
-    if (opt_action(on ? "Stop recording" : "Start recording", on ? "Recording" : "F8",
+    if (opt_action(on ? "Stop recording" : "Start recording", "",
                    "Records the game, without the menu, frame by frame. F8 starts and stops it at any time.")) {
         recorder_toggle();
         if (recorder_active()) set_open(false);  // (back to the game: the recording starts there)
     }
-    if (recorder_last_file()[0])
-        opt_action("Last video", recorder_last_file(), "The newest recording, in the save folder.", false);
+    char status[600];
+    if (on) {
+        int t = recorder_seconds();
+        snprintf(status, sizeof status, "%s %d:%02d", L("Recording"), t / 60, t % 60);
+    } else if (recorder_last_file()[0]) {
+        snprintf(status, sizeof status, "%s", recorder_last_file());
+    } else {
+        snprintf(status, sizeof status, "%s", L("Not recording"));
+    }
+    opt_shown_next();
+    opt_action("Status", status, recorder_last_file()[0] && !on ? "Not recording. The newest video is shown." :
+               "Whether a recording is running, and for how long.", true, false);
+
+    // (the options apply from the next recording: greyed out while one runs)
+    opt_section("Video");
+    if (on) opt_disable_next();
+    opt_choice("Resolution", &g_settings.rec_size, sizes, 5, 0,
+               "The video's size. Window records what you see; the others scale it, keeping its shape.");
+    if (on) opt_disable_next();
+    opt_choice("Frame rate", &g_settings.rec_fps, rates, 2, 0, "Frames per second in the video: every game frame at 60.");
+    if (on) opt_disable_next();
+    opt_choice("Codec", &g_settings.rec_codec, codecs, 2, 0,
+               "H.264 plays everywhere. H.265 makes smaller files at the same quality, but older players may not open it.");
+    if (on) opt_disable_next();
+    int cq = g_settings.rec_cq >= 1 && g_settings.rec_cq <= 51 ? g_settings.rec_cq - 1 : 19;
+    if (opt_choice("Quality (CQ)", &cq, cqs, 51, 19,
+                   "Lower is sharper and makes bigger files. 15 to 25 suits most videos; 10 looks almost like the game.", false))
+        g_settings.rec_cq = cq + 1;
+    if (on) opt_disable_next();
+    char enc_desc[400];
+    snprintf(enc_desc, sizeof enc_desc, "%s%s%s",
+             L("What compresses the video. Auto uses your graphics card's encoder when it has one, and falls back to the next one that works."),
+             recorder_encoder()[0] ? "\n\n" : "", recorder_encoder()[0] ? recorder_encoder() : "");
+    opt_choice("Encoder", &g_settings.rec_encoder, encoders, 7, 0, enc_desc);
+    if (on) opt_disable_next();
+    opt_choice("Speed / Size", &g_settings.rec_speed, speeds, 4, 1,
+               "Faster settings take less work from the computer. Smaller ones take more and make smaller files.");
+
+    opt_section("Audio");
+    if (on) opt_disable_next();
+    opt_toggle("Hear the game", &g_settings.rec_audio, true, "The game's sound in the video.");
+    if (on || !g_settings.rec_audio) opt_disable_next();
+    opt_choice("Audio quality", &g_settings.rec_audio_kbps, akbps, 4, 1, "The sound's quality (AAC).");
+
+    opt_section("Files");
+    if (on) opt_disable_next();
+    opt_choice("File type", &g_settings.rec_container, formats, 2, 0,
+               "MP4 plays everywhere. MKV keeps what was recorded even if the game is closed suddenly.");
+    if (on) opt_disable_next();
+    if (opt_text("File name starts with", g_settings.rec_prefix, sizeof g_settings.rec_prefix, "DKCR Recording",
+                 "The start of each video's name. The date and time follow it."))
+        settings_save();
+    if (on) opt_disable_next();
+    opt_button_next();
+    if (opt_action("Save folder", g_settings.rec_dir[0] ? g_settings.rec_dir : "recordings",
+                   "Where videos are saved. Choose any folder; the default is the recordings folder next to the program.", true, false))
+        SDL_ShowOpenFolderDialog(rec_folder_picked, NULL, SDL_GetKeyboardFocus(), g_settings.rec_dir[0] ? g_settings.rec_dir : NULL, false);
+    if (g_settings.rec_dir[0]) {
+        if (on) opt_disable_next();
+        opt_button_next();
+        if (opt_action("Use the default folder", "", "Saves videos in the recordings folder next to the program again."))
+            g_settings.rec_dir[0] = 0, settings_save();
+    }
     opt_button_next();
     if (opt_action("Open save folder", "", "Shows your recordings in the file browser.")) {
         const char *dir = recorder_dir();
@@ -915,49 +980,8 @@ static void tab_recording(void) {
         SDL_OpenURL(url);
     }
 
-    opt_section("Output");
-    if (on) opt_disable_next();
-    opt_button_next();
-    if (opt_action("Save folder", g_settings.rec_dir[0] ? g_settings.rec_dir : "recordings (default)",
-                   "Where videos are saved. Choose any folder; the default is the recordings folder next to the program."))
-        SDL_ShowOpenFolderDialog(rec_folder_picked, NULL, SDL_GetKeyboardFocus(), g_settings.rec_dir[0] ? g_settings.rec_dir : NULL, false);
-    if (g_settings.rec_dir[0]) {
-        if (on) opt_disable_next();
-        opt_button_next();
-        if (opt_action("Use the default folder", "", "Saves videos in the recordings folder next to the program again."))
-            g_settings.rec_dir[0] = 0, settings_save();
-    }
-    if (on) opt_disable_next();
-    opt_choice("File type", &g_settings.rec_container, formats, 2, 0,
-               "MP4 plays everywhere. MKV keeps what was recorded even if the game is closed suddenly.");
-    if (on) opt_disable_next();
-    opt_choice("Output size", &g_settings.rec_size, sizes, 5, 0,
-               "The video's size. Same as window records what you see; the others scale it, keeping its shape.");
-    if (on) opt_disable_next();
-    opt_choice("Frame rate", &g_settings.rec_fps, rates, 2, 0, "Frames per second in the video: every game frame at 60.");
-
-    opt_section("Video");
-    if (on) opt_disable_next();
-    opt_choice("Codec", &g_settings.rec_codec, codecs, 2, 0,
-               "H.264 plays everywhere. H.265 makes smaller files at the same quality, but older players may not open it.");
-    if (on) opt_disable_next();
-    char enc_desc[400];
-    snprintf(enc_desc, sizeof enc_desc, "%s%s%s",
-             L("What compresses the video. Auto uses your graphics card's encoder when it has one, and falls back to the next one that works."),
-             recorder_encoder()[0] ? "\n\n" : "", recorder_encoder()[0] ? recorder_encoder() : "");
-    opt_choice("Encoder", &g_settings.rec_encoder, encoders, 7, 0, enc_desc);
-    if (on) opt_disable_next();
-    opt_choice("Bitrate", &g_settings.rec_bitrate, bitrates, 9, 0,
-               "Higher looks sharper and makes bigger files. Auto: 16 Mbit/s at 1080p60, scaled to the size and frame rate.");
-
-    opt_section("Sound");
-    if (on) opt_disable_next();
-    opt_toggle("Record sound", &g_settings.rec_audio, true, "The game's sound in the video.");
-    if (on || !g_settings.rec_audio) opt_disable_next();
-    opt_choice("Sound bitrate", &g_settings.rec_audio_kbps, akbps, 4, 1, "The sound's quality (AAC).");
-
-    opt_section("Screen");
-    opt_toggle("Recording dot", &g_settings.rec_dot, true, "A red dot in the corner while recording. It is never in the video.");
+    opt_section("On screen");
+    opt_toggle("Show REC box", &g_settings.rec_dot, true, "A REC box in the corner while recording. It is never in the video.");
     opt_end();
 }
 

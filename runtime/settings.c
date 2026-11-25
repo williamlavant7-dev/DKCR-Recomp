@@ -57,6 +57,9 @@ Settings g_settings = {
     .movie_audio = true,
     .rec_quality = 1,
     .rec_audio_kbps = 1,
+    .rec_cq = 20,
+    .rec_speed = 1,
+    .rec_prefix = "DKCR Recording",
     .rec_audio = true,
     .rec_dot = true,
     .rumble = true,
@@ -244,6 +247,16 @@ void settings_load(void) {
             g_settings.rec_size = 0;
             for (int i = 1; i < 5; i++) if (atoi(val) == hh[i]) g_settings.rec_size = i;
         }
+        else if (!strcmp(key, "record_cq")) {
+            int v = atoi(val);
+            g_settings.rec_cq = v >= 1 && v <= 51 ? v : 20;
+        }
+        else if (!strcmp(key, "record_speed")) {
+            static const char *const sp[] = {"fastest", "fast", "balanced", "smallest"};
+            g_settings.rec_speed = 1;
+            for (int i = 0; i < 4; i++) if (!strcmp(val, sp[i])) g_settings.rec_speed = i;
+        }
+        else if (!strcmp(key, "record_name")) snprintf(g_settings.rec_prefix, sizeof g_settings.rec_prefix, "%s", val);
         else if (!strcmp(key, "record_format")) g_settings.rec_container = !strcmp(val, "mkv");
         else if (!strcmp(key, "record_audio_bitrate")) {
             static const int k[] = {128, 192, 256, 320};
@@ -387,6 +400,10 @@ void settings_save(void) {
         if (bi) fprintf(f, "record_bitrate = %d\n", m[bi]); else fprintf(f, "record_bitrate = auto\n");
         if (si) fprintf(f, "record_size = %d\n", hh[si]); else fprintf(f, "record_size = window\n");
         fprintf(f, "record_format = %s\n", g_settings.rec_container == 1 ? "mkv" : "mp4");
+        static const char *const sp[] = {"fastest", "fast", "balanced", "smallest"};
+        fprintf(f, "record_cq = %d\n", g_settings.rec_cq >= 1 && g_settings.rec_cq <= 51 ? g_settings.rec_cq : 20);
+        fprintf(f, "record_speed = %s\n", sp[g_settings.rec_speed >= 0 && g_settings.rec_speed < 4 ? g_settings.rec_speed : 1]);
+        fprintf(f, "record_name = %s\n", g_settings.rec_prefix);
         fprintf(f, "record_audio_bitrate = %d\n", k[ki]);
     }
     {

@@ -54,7 +54,10 @@ typedef struct {
     char rec_dir[1024];  // where videos go ("": the data folder's recordings/)
     int rec_codec;       // 0 H.264, 1 H.265 / HEVC
     int rec_encoder;     // REC_ENC_* (recorder.h): 0 Auto
-    int rec_bitrate;     // 0 Auto, 1.. 4 / 8 / 12 / 16 / 24 / 32 / 50 / 80 Mbit/s
+    int rec_bitrate;     // (no longer used: Quality (CQ) replaced it; still read and written for older versions)
+    int rec_cq;          // Quality (CQ): constant quality 1..51, lower is sharper and bigger
+    int rec_speed;       // Speed / Size: 0 Fastest, 1 Fast, 2 Balanced, 3 Smallest (the encoder's preset)
+    char rec_prefix[64]; // the start of a video's file name (the date and time follow)
     int rec_size;        // output height: 0 the window's, 1 2160, 2 1440, 3 1080, 4 720
     int rec_container;   // 0 MP4, 1 MKV
     int rec_audio_kbps;  // 0 128, 1 192, 2 256, 3 320 kbit/s
