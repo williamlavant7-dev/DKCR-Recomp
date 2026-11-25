@@ -1183,6 +1183,8 @@ void output_scale(double dw, double dh, bool reshape_allowed, double now, double
     p_mode = mode, p_ups = g_settings.upscaler, p_aa = g_settings.antialias, p_fps = settings_fps_target();
     if (forced > 0) h = forced;
     else if (mode >= 1 && mode <= 8) h = mode == 1 && g_gpu_integrated ? 720 / 1080.0 : mode;
+    else if (mode == RES_P720 || mode == RES_P1080 || mode == RES_P1440)  // (that many lines; wider with the window)
+        h = (mode == RES_P720 ? 720 : mode == RES_P1080 ? 1080 : 1440) / 1080.0;
     else {
         h = reshape ? dh / 1080.0 : fit;  // Match display
         if (mode == RES_DYNAMIC) {

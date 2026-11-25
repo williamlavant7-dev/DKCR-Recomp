@@ -717,26 +717,26 @@ static void tab_display(void) {
     // display order -> RES_* (the ini / enum order predates the menu order)
     // (up to 4x: 7680 x 4320, 8K - more only ran out of GPU memory, and sat next to 75% in the list)
     // (Match display in the middle: left from it 75% / 50% / 25%, right 1x-4x; user 2026-10-11)
-    static const char *res[] = {LN("25%"), LN("50%"), LN("75%"), LN("Match display"), LN("1x"), LN("2x"), LN("3x"), LN("4x")};
-    static const int res_mode[] = {RES_Q25, RES_Q50, RES_Q75, RES_MATCH, 1, 2, 3, 4};
+    // (720p / 1080p / 1440p: that many lines whatever the display, user 2026-11-25; 4K / 6K / 8K are 2x / 3x / 4x the
+    //  Switch's 1080p, as before)
+    static const char *res[] = {LN("25%"), LN("50%"), LN("75%"), LN("Match display"), LN("720p"), LN("1080p"),
+                                LN("1440p"), LN("4K"), LN("6K"), LN("8K")};
+    static const int res_mode[] = {RES_Q25, RES_Q50, RES_Q75, RES_MATCH, RES_P720, RES_P1080, RES_P1440, 2, 3, 4};
     enum { RES_MATCH_AT = 3 };
     enum { NRES = sizeof res_mode / sizeof res_mode[0] };
     {
         int ri = RES_MATCH_AT, rdef = RES_MATCH_AT;  // (rdef: the GPU's default)
         for (int i = 0; i < NRES; i++) {
-            if (res_mode[i] == g_settings.res_mode) ri = i;
+            if (res_mode[i] == g_settings.res_mode || (g_settings.res_mode == 1 && res_mode[i] == RES_P1080)) ri = i;  // (1x: 1080p)
             if (res_mode[i] == g_default_res_mode) rdef = i;
         }
         float sx, sy;
         renderer_get_scale(&sx, &sy);
         char d[1024];  // (in the menus' language already: the row leaves it as it is)
         snprintf(d, sizeof d,
-                 g_gpu_integrated
-                     ? L("How sharp the 3D image is. Match display uses your screen's resolution. 1x to 4x multiply the "
-                         "Switch's 1080p, and 1x is 720p on this GPU. 75%%, 50%% and 25%% are for slower machines.\n\n"
-                         "Rendering at %.0f x %.0f.")
-                     : L("How sharp the 3D image is. Match display uses your screen's resolution. 1x to 4x multiply the "
-                         "Switch's 1080p. 75%%, 50%% and 25%% are for slower machines.\n\nRendering at %.0f x %.0f."),
+                 L("How sharp the 3D image is. Match display uses your screen's resolution. 720p to 8K render that many "
+                   "lines whatever the window's size. 75%%, 50%% and 25%% are for slower machines.\n\n"
+                   "Rendering at %.0f x %.0f."),
                  1920.0 * sx, 1080.0 * sy);
         char note[32];  // (the preview's value: "50% (800×450)", its text the user's - 2026-11-03)
         snprintf(note, sizeof note, "%.0f×%.0f", 1920.0 * sx, 1080.0 * sy);

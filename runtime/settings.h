@@ -3,7 +3,8 @@
 #include <stdbool.h>
 
 enum { ASPECT_UNLOCKED = 0, ASPECT_ORIGINAL = 1 };
-enum { RES_MATCH = 0, /* 1..8 = 1x..8x */ RES_DYNAMIC = 9 /* output_scale.c's mode while dyn_res is on */, RES_Q75 = 10, RES_Q25 = 11, RES_Q50 = 12 };
+enum { RES_MATCH = 0, /* 1..8 = 1x..8x */ RES_DYNAMIC = 9 /* output_scale.c's mode while dyn_res is on */, RES_Q75 = 10, RES_Q25 = 11, RES_Q50 = 12,
+       RES_P720 = 13, RES_P1080 = 14, RES_P1440 = 15 /* that many lines, whatever the display (and on any GPU) */ };
 // (11 was 67% of the display: dkcrrecomp.ini "67%" now loads as RES_Q75)
 enum { UPSCALE_BILINEAR = 0, UPSCALE_METALFX = 1 /* macOS */, UPSCALE_FSR1 = 2 /* Windows: AMD FSR 1 */ };
 #ifdef __APPLE__
@@ -34,7 +35,7 @@ enum { FPS_OFF, FPS_TOP_LEFT, FPS_TOP_RIGHT, FPS_BOTTOM_LEFT, FPS_BOTTOM_RIGHT, 
 typedef struct {
     int aspect;          // ASPECT_*: unlocked = fill the window (wider/taller views), original = 16:9 with bars
     bool fullscreen;
-    int res_mode;        // RES_MATCH, 1..4 (N x the Switch's 1080p), RES_DYNAMIC, RES_Q75/50/25 (share of the display)
+    int res_mode;        // RES_MATCH, 1..4 (N x the Switch's 1080p), RES_DYNAMIC, RES_Q75/50/25 (share of the display), RES_P720/1080/1440
     bool res_auto;       // never chosen: the default for this GPU (settings_resolve_defaults); saved as "auto"
     bool dyn_res;        // Dynamic resolution (its own toggle since 2026-11-12, was res_mode RES_DYNAMIC): up to the
                          // display's resolution, res_mode set aside while it's on (output_scale.c)

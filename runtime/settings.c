@@ -186,7 +186,8 @@ bool g_gpu_integrated;
 static const char *res_name(int m) {
     static char n[8];
     if (m >= 1 && m <= 8) { snprintf(n, sizeof n, "%dx", m); return n; }
-    return m == RES_Q75 ? "75%" : m == RES_Q50 ? "50%" : m == RES_Q25 ? "25%" : "match";
+    return m == RES_Q75 ? "75%" : m == RES_Q50 ? "50%" : m == RES_Q25 ? "25%" : m == RES_P720 ? "720p" :
+           m == RES_P1080 ? "1080p" : m == RES_P1440 ? "1440p" : "match";
 }
 
 void settings_resolve_defaults(bool integrated) {
@@ -286,6 +287,8 @@ void settings_load(void) {
             if (!strcmp(val, "dynamic")) { g_settings.dyn_res = true, g_settings.res_mode = RES_MATCH; continue; }
             g_settings.res_mode = (!strcmp(val, "75%") || !strcmp(val, "67%")) ? RES_Q75 :
                                   !strcmp(val, "50%") ? RES_Q50 : !strcmp(val, "25%") ? RES_Q25 :
+                                  !strcmp(val, "720p") ? RES_P720 : !strcmp(val, "1080p") ? RES_P1080 :
+                                  !strcmp(val, "1440p") ? RES_P1440 :
                                   (n >= 1 && n <= 4) ? n : n > 4 ? 4 : RES_MATCH;  // (5x-8x were removed)
         }
         else if (!strcmp(key, "upscaler")) {  // (metalfx / fsr1: this OS's; auto: never chosen, the GPU's default)
