@@ -8,9 +8,6 @@
 enum { INTERP_OFF = 0, INTERP_MEASURE = 1, INTERP_ON = 2 };
 // What's wanted now (the setting, or LARECOMP_INTERP): the backend's present asks once per game frame.
 int interp_wanted(void);
-// The most images a second Frame Generation makes: 120 with its 120 fps choice (one in-between a game frame), else 0
-// (the display's refresh rate)
-int interp_max_hz(void);
 
 // The executor's hooks (renderer.m). g_interp_log: the frame being executed is logged (draws + uniform copies);
 // g_interp_replaying: a replay runs (skip side effects, read the logged / blended uniforms).

@@ -61,14 +61,8 @@ int interp_wanted(void) {
         if (env >= 0) LOG("[interp] LARECOMP_INTERP=%s\n", e);
     }
     if (env >= 0) return env;
-    return g_settings.frame_interp != FRAME_GEN_OFF ? INTERP_ON : INTERP_OFF;
+    return g_settings.frame_interp ? INTERP_ON : INTERP_OFF;
 }
-
-// DKCR moves its world one fixed step a frame, whatever the clock says (the same scripted input showed the same
-// state at the same frame at 60 and at 120 vsyncs a second): run faster, the whole game runs faster. 120 fps is
-// therefore one in-between a game frame, not a faster game; on a 240 Hz display the in-between is shown for two
-// refreshes.
-int interp_max_hz(void) { return g_settings.frame_interp == FRAME_GEN_120 ? 120 : 0; }
 
 typedef struct {
     uint8_t stage, slot, snap;  // snap: elements past the jump distance show the new value (a jump, not motion)
@@ -1517,19 +1511,6 @@ int interp_schedule(uint64_t s0u, uint64_t s1u, uint64_t nowu, uint64_t phaseu, 
     if (!own && n < max) {
         out[n++] = (InterpShot){(uint64_t)end, 1.0f};
         last_at = end;
-    }
-    // Frame Generation's 120 fps (interp_max_hz): one in-between, the one nearest half-way; it stays up until the
-    // game's own image replaces it
-    int cap = interp_max_hz() > 0 ? (int)lround(interp_max_hz() / 60.0) - 1 : 0, mids = 0;
-    for (int i = 0; i < n; i++) mids += out[i].t < 1.0f;
-    if (cap > 0 && mids > cap) {
-        int best = -1;
-        for (int i = 0; i < n; i++)
-            if (out[i].t < 1.0f && (best < 0 || fabs(out[i].t - 0.5) < fabs(out[best].t - 0.5))) best = i;
-        int m = 0;
-        for (int i = 0; i < n; i++)
-            if (out[i].t >= 1.0f || i == best) out[m++] = out[i];
-        n = m;
     }
     s_shots += (uint64_t)n;
     for (int i = 0; i < n; i++) s_mids += out[i].t < 1.0f;

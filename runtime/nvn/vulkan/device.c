@@ -1766,7 +1766,6 @@ static int ip_mids(TexBackend *b, uint64_t frame) {  // (the in-betweens shown)
         }
     }
     if (hz_env <= 0 && hz_cap > 0 && hz_cap < hz) hz = hz_cap;
-    if (interp_max_hz() > 0 && hz > interp_max_hz()) hz = interp_max_hz();  // (Frame Generation's 120 fps)
     // (counted for the game's own 60, not the measured interval: a game slowed to its 30 fps mode got more in-betweens,
     // which held it at 30)
     int mids = hz >= 100 ? (int)lround(hz / 60.0) - 1 : 0;
@@ -2164,18 +2163,6 @@ void ui_window_init(void) {
 #endif
     rt_window_icon(window);
     rt_window_remember(window);
-    if (getenv("LARECOMP_WINDOW_DISPLAY")) {  // (tests) the window centred on that display (0: the first SDL lists)
-        int n = 0, want = atoi(getenv("LARECOMP_WINDOW_DISPLAY"));
-        SDL_DisplayID *ids = SDL_GetDisplays(&n);
-        for (int i = 0; ids && i < n; i++) {
-            const SDL_DisplayMode *dm = SDL_GetCurrentDisplayMode(ids[i]);
-            LOG("[vk] display %d (id %u): %s, %dx%d %.2f Hz%s\n", i, (unsigned)ids[i], SDL_GetDisplayName(ids[i]),
-                dm ? dm->w : 0, dm ? dm->h : 0, dm ? dm->refresh_rate : 0.0, i == want ? " - the window goes here" : "");
-        }
-        if (ids && want >= 0 && want < n)
-            SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED_DISPLAY(ids[want]), SDL_WINDOWPOS_CENTERED_DISPLAY(ids[want]));
-        SDL_free(ids);
-    }
     // the Fullscreen setting applies from the start screen on (not only once the game runs); test windows stay windows
 #ifdef __ANDROID__
     SDL_SetWindowFullscreen(window, true);  // (always: there is no window to go back to)
