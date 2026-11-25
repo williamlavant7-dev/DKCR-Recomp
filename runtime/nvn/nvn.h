@@ -44,12 +44,19 @@ typedef struct {
     void *backend;
 } NvnSamplerDesc;
 
+// Our layout of the guest NVNtextureView, packed into 16 bytes: the game keeps views on the stack with only 16 bytes
+// before the next object. DKCR's texture upload (main+0x11c1b40, the title's attract movie frames) puts a view at
+// sp+0x20 and its staging NVNbuffer at sp+0x30; a 0x28-byte view wiped the buffer's address, pool and offset, and the
+// buffer's deferred release then crashed in Unity's render-command loop (pool NULL, accessing 0x178).
 typedef struct {
-    uint32_t setmask;  // which fields are overridden
-    uint16_t base_level, num_levels, min_layer, num_layers;
-    uint32_t format, target, ds_mode;
+    uint8_t setmask;  // which fields are overridden (1 levels, 2 layers, 4 format, 8 swizzle, 16 depth-stencil, 32 target)
+    uint8_t target, base_level, num_levels;
+    uint16_t min_layer, num_layers;
+    uint16_t format;
+    uint8_t ds_mode, pad;
     uint8_t swizzle[4];
-} NvnTextureView;  // our layout of the guest NVNtextureView (0x28 bytes)
+} NvnTextureView;
+_Static_assert(sizeof(NvnTextureView) == 16, "the guest's NVNtextureView space");
 
 // A view naming a texture (pool entry, render target, clear, copy): one in another format is told to the backend before
 // the texture is used through it.

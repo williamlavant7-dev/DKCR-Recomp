@@ -390,10 +390,16 @@ static void ex_select_track(Cpu *c) {
     c->x[0] = 0;
 }
 
+// nn::movie's result for the end of the stream: NnMediaCommon::AndroidErrorToNnError maps stagefright's
+// ERROR_END_OF_STREAM (-1011) to 0x2000 (subsdk0+0x1175a0), and the extractor's GetSampleTrackIndex, GetSampleTime and
+// ReadSampleData return it once the file is read. DKCR's player (main+0x1a4c0a4) takes 0 and 0x2000 as normal and
+// keeps any other result as the stream's error: our 1 there left the title black after its attract movie.
+#define MOVIE_END_OF_STREAM 0x2000
+
 static void ex_get_sample_track(Cpu *c) {
     Extractor *e = self_state(c);
     ex_fill(e);
-    if (!e->have_pkt) { c->x[0] = 1; return; }
+    if (!e->have_pkt) { c->x[0] = e->eof ? MOVIE_END_OF_STREAM : 1; return; }
     uint64_t t = 0;
     for (int i = 0; i < e->ntracks; i++) if (e->map[i] == e->pkt->stream_index) t = (uint64_t)i;
     *(uint64_t *)(uintptr_t)c->x[1] = t;
@@ -404,7 +410,7 @@ static void ex_read(Cpu *c) {
     Extractor *e = self_state(c);
     MBuffer *b = BUF(c->x[1]);
     ex_fill(e);
-    if (!e->have_pkt) { c->x[0] = 1; return; }
+    if (!e->have_pkt) { b->size = 0; c->x[0] = e->eof ? MOVIE_END_OF_STREAM : 1; return; }
     uint32_t n = (uint32_t)e->pkt->size;
     if (n > b->capacity) { LOG("[movie] packet %u > buffer %llu\n", n, b->capacity); n = (uint32_t)b->capacity; }
     memcpy((void *)(uintptr_t)b->base, e->pkt->data, n);
@@ -422,7 +428,7 @@ static void ex_advance(Cpu *c) {
 static void ex_get_sample_time(Cpu *c) {
     Extractor *e = self_state(c);
     ex_fill(e);
-    if (!e->have_pkt) { c->x[0] = 1; return; }
+    if (!e->have_pkt) { c->x[0] = e->eof ? MOVIE_END_OF_STREAM : 1; return; }
     AVStream *s = e->fmt->streams[e->pkt->stream_index];
     int64_t ts = e->pkt->pts != AV_NOPTS_VALUE ? e->pkt->pts : e->pkt->dts;
     *(int64_t *)(uintptr_t)c->x[1] = av_rescale_q(ts, s->time_base, (AVRational){1, 1000000});
@@ -550,6 +556,8 @@ typedef struct {
     bool eos_pending;
     int64_t eos_time;
     bool stopped;  // Stop / destroyed: no more events (see dec_stop)
+    uint32_t n_out;    // buffers handed out (dec_acquire_output), for the stop line
+    int64_t last_out;  // the latest one's time (us)
     pthread_mutex_t lock;
 } Decoder;
 
@@ -597,18 +605,26 @@ static void dec_configure(Cpu *c) {
     const AVCodec *codec = avcodec_find_decoder(p->codec_id);
     d->ctx = avcodec_alloc_context3(codec);
     avcodec_parameters_to_context(d->ctx, p);
+    // Slice threads only: frame threading holds thread_count - 1 decoded frames back until more input comes, and
+    // DKCR's player never sends an end-of-stream input (its reader loop stops when the extractor reports the end).
+    // The last 3 frames of a movie then never came out, the player waited for them, and the title stayed black after
+    // its attract movie. The Switch's decoder has no such delay (the game's H.264 movies have no B-frames).
     d->ctx->thread_count = 4;
+    d->ctx->thread_type = FF_THREAD_SLICE;
     if (avcodec_open2(d->ctx, codec, NULL) < 0) { LOG("[movie] cannot open decoder\n"); c->x[0] = 1; return; }
     d->frame = av_frame_alloc();
     d->pkt = av_packet_alloc();
     d->video = p->codec_type == AVMEDIA_TYPE_VIDEO;
     d->width = p->width;
     d->height = p->height;
-    d->stride = (p->width + 255) & ~255;
+    // NV12 rows tightly packed (stride = width): DKCR's Unity reads the frame that way whatever nv12-y-stride says
+    // (main+0x1a49018 uploads width * height bytes of Y, then half that of UV from nv12-uv-offset, with no row
+    // stride). A 256-aligned stride (2048 for the 1920-wide attract movies) showed them as a purple smear.
+    d->stride = (p->width + 1) & ~1;
     d->sample_rate = p->sample_rate;
     d->channels = p->ch_layout.nb_channels;
     d->in_cap = d->video ? 4 << 20 : 256 << 10;
-    d->out_cap = d->video ? (uint32_t)(d->stride * ((d->height + 15) & ~15) * 3 / 2) : 64 << 10;
+    d->out_cap = d->video ? (uint32_t)(d->stride * ((d->height + 1) & ~1) * 3 / 2) : 64 << 10;
     for (int i = 0; i < NIN; i++) d->in_mem[i] = buf_get(d->in_cap);
     for (int i = 0; i < NOUT; i++) d->out_mem[i] = buf_get(d->out_cap);
     LOG("[movie] decoder %s configured: %dx%d %d Hz %d ch\n", codec->name, d->width, d->height, d->sample_rate, d->channels);
@@ -621,6 +637,9 @@ static void dec_register_events(Cpu *c) {
     c->x[0] = 0;
 }
 
+// NV12 planes in an output buffer: Y (stride * height), then UV straight after
+static uint32_t dec_uv_off(const Decoder *d) { return (uint32_t)(d->stride * ((d->height + 1) & ~1)); }
+
 static void dec_output_format(Decoder *d, MediaData *m) {
     md_clear(m);
     if (d->video) {
@@ -629,8 +648,11 @@ static void dec_output_format(Decoder *d, MediaData *m) {
         md_set_int(m, "height", d->height);
         md_set_int(m, "nv12-y-stride", d->stride);
         md_set_int(m, "nv12-y-offset", 0);
-        md_set_int(m, "nv12-uv-offset", d->stride * ((d->height + 15) & ~15));
+        md_set_int(m, "nv12-uv-offset", dec_uv_off(d));
         md_set_int(m, "nv12-colorspace", 0);
+        md_set_int(m, "slice-height", (d->height + 1) & ~1);
+        MdEntry *crop = md_set_kind(m, "crop", MD_RECT);  // (left, top, right, bottom: inclusive)
+        if (crop) crop->rect[0] = 0, crop->rect[1] = 0, crop->rect[2] = d->width - 1, crop->rect[3] = d->height - 1;
     } else {
         md_set_str(m, "mime", "audio/raw");
         md_set_int(m, "sample-rate", d->sample_rate);
@@ -662,7 +684,8 @@ static void dec_stop(Cpu *c) {
     pthread_mutex_lock(&d->lock);
     if (!d->stopped) {
         d->stopped = true;
-        LOG("[movie] decoder %s stopped\n", d->video ? "video" : "audio");
+        LOG("[movie] decoder %s stopped (%u buffers out, the last at %.3f s)\n", d->video ? "video" : "audio", d->n_out,
+            d->last_out / 1e6);
         uint64_t saved[8];
         memcpy(saved, c->x, sizeof saved);
         for (int i = 0; i < 4; i++)
@@ -723,7 +746,7 @@ static bool emit_frame(Decoder *d, AVFrame *f, int64_t time, uint32_t flags) {
     if (flags & MOVIE_EOS) {
         size = 0;
     } else if (d->video) {
-        int h = d->height, w = d->width, uv_off = d->stride * ((h + 15) & ~15);
+        int h = d->height, w = d->width, uv_off = dec_uv_off(d);
         for (int y = 0; y < h; y++) memcpy(o + y * d->stride, f->data[0] + y * f->linesize[0], w);
         for (int y = 0; y < h / 2; y++) {  // interleave U and V into NV12
             uint8_t *uv = o + uv_off + y * d->stride;
@@ -819,6 +842,7 @@ static void dec_acquire_output(Cpu *c) {
     if (!d->nready) { pthread_mutex_unlock(&d->lock); c->x[0] = 1; return; }
     OutReady r = d->ready[0];
     memmove(d->ready, d->ready + 1, --d->nready * sizeof *d->ready);
+    d->n_out++, d->last_out = r.time;
     int remaining = d->nready;
     pthread_mutex_unlock(&d->lock);
     *(int32_t *)(uintptr_t)c->x[1] = r.idx;
@@ -842,14 +866,14 @@ static void dec_get_output_buffer(Cpu *c) {
         static int gpu = -1;
         if (gpu < 0) gpu = !getenv("LARECOMP_MOVIE_CPU_CONVERT");
         if (gpu && renderer_upload_nv12(t, d->out_mem[i], (uint32_t)w, (uint32_t)h, (uint32_t)d->stride,
-                                        (uint32_t)(d->stride * ((h + 15) & ~15)))) {
+                                        dec_uv_off(d))) {
             c->x[0] = 0;
             return;
         }
         if (!d->sws)
             d->sws = sws_getContext(w, h, AV_PIX_FMT_NV12, w, h, AV_PIX_FMT_RGBA, SWS_BILINEAR, NULL, NULL, NULL);
         if (!d->rgba) d->rgba = malloc((size_t)w * h * 4);
-        const uint8_t *src[2] = {d->out_mem[i], d->out_mem[i] + d->stride * ((h + 15) & ~15)};
+        const uint8_t *src[2] = {d->out_mem[i], d->out_mem[i] + dec_uv_off(d)};
         int src_stride[2] = {d->stride, d->stride};
         uint8_t *dst[1] = {d->rgba};
         int dst_stride[1] = {w * 4};
@@ -858,10 +882,30 @@ static void dec_get_output_buffer(Cpu *c) {
         c->x[0] = 0;
         return;
     }
+    if (b->base && b->capacity >= d->out_size[i]) {
+        // The caller's own memory (SetDataAndCapacity): the decoder copies the frame into it, as nn::movie does. DKCR's
+        // player passes a width * height * 3 / 2 buffer (main+0x1a49340) and uploads its Y and UV planes from there;
+        // pointing the Buffer at our slot instead left its memory zero and the attract movies showed a flat purple.
+        memcpy((void *)(uintptr_t)b->base, d->out_mem[i], d->out_size[i]);
+        b->offset = 0;
+        b->size = (int32_t)d->out_size[i];
+        c->x[0] = 0;
+        return;
+    }
     memset(b, 0, sizeof *b);
     b->base = (uint64_t)(uintptr_t)d->out_mem[i];
     b->capacity = d->out_cap;
     b->size = (int32_t)d->out_size[i];
+    c->x[0] = 0;
+}
+
+// DKCR's title preview requests the overload that also returns the output format.
+static void dec_get_output_buffer_with_format(Cpu *c) {
+    Decoder *d = self_state(c);
+    uint64_t format = c->x[3];
+    dec_get_output_buffer(c);
+    if (c->x[0]) return;
+    dec_output_format(d, md(format));
     c->x[0] = 0;
 }
 
@@ -930,7 +974,7 @@ HLE_FUNC("_ZN5movie7DecoderC1ENS_11DecoderTypeENS_19DecoderOutputFormatENS_11Dec
         HostFn f[19] = {dec_dtor, dec_dtor, dec_configure, dec_register_events, dec_get_output_format,
                         dec_start, dec_stop, ok, ok, dec_acquire_input, dec_get_input_buffer, dec_send_input,
                         dec_acquire_output, dec_get_output_buffer, dec_get_counts, dec_release_output, ok,
-                        movie_log_slot, dec_get_output_buffer_format};
+                        dec_get_output_buffer_with_format, dec_get_output_buffer_format};
         vt = g_dec_vt = make_vtable(f, 19, "Decoder");
     }
     uint64_t *self = (uint64_t *)(uintptr_t)c->x[0];
