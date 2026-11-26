@@ -165,6 +165,7 @@ All of these write to the log (`lasrecomp.log` in the data folder, or the run's 
 | `LARECOMP_FPS_INTERVAL` | seconds | How often the fps line is logged (default 2). |
 | `LARECOMP_LOG_HITCH_MS` | ms | Log every gap between presents longer than this. |
 | `LARECOMP_SLOW_FRAME_MS` | ms | Log a `[slow]` line for frames slower than this, with what the renderer did (default 50, 0 off). |
+| `LARECOMP_SLOW_FRAME_ALL` | 1 | Log `[slow]` lines during loads too, with no limit a minute (loading screen tests). |
 | `LARECOMP_HANG_DUMP` | seconds | Write a `[hang]` dump when the game or renderer is stuck this long (default 30, 0 off). |
 | `LARECOMP_HANG_REGS` | 1 | In the `[hang]` dump: each thread's registers as its wait left them. |
 | `LARECOMP_HANG_FINDPTR` | hex value | In the `[hang]` dump: where an 8-byte word equal to it lies, within 16 MB of it (what points to an object, e.g. a semaphore's owner). |
@@ -240,7 +241,7 @@ The per-GPU default switches are explained, with the GPUs they were tested on, i
 | `LARECOMP_RECORD_ENCODER` | name | Video recording: only that encoder (`h264_nvenc`, `h264_amf`, `h264_qsv`, `h264_mf`, `libx264`, `mpeg4`), e.g. `h264_mf` as the release FFmpeg has. |
 | `LARECOMP_RECORD_AT` | frame:frames | A video recording (runtime/recorder.c) from that frame, that many frames long (default 600), into the data folder's `recordings/`. |
 | `LARECOMP_VK_BUILD_WAIT_MS` | ms | Vulkan: how long a frame's draws may wait in all for programs and pipelines still building before they are skipped (default 10; 0: skip at once, the old behaviour). |
-| `LARECOMP_VK_CS_WAIT_MS` | ms | Vulkan: how long a compute dispatch waits for its shader still building before it is skipped (default 2000; 0: skip at once). |
+| `LARECOMP_VK_CS_WAIT_MS` | ms | Vulkan: how long a frame's compute dispatches may wait in all for their shaders still building before they are skipped (default 100; 0: skip at once). |
 | `LARECOMP_VK_PIPELINE_CACHE` | 0 | Start with an empty Vulkan pipeline cache (the saved one is written over as usual). The Android emulator hangs loading a large one. |
 | `LARECOMP_VK_VALIDATION` | 1 | Turn the Khronos validation layer on (it must be installed) and log its warnings and errors (first 500). |
 | `LARECOMP_VK_VALIDATION_STOP` | 1 | As `LARECOMP_VK_VALIDATION`, and exit at the first validation error. |

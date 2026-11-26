@@ -97,8 +97,10 @@ void slow_frame_present(uint64_t now, uint64_t gcpu) {
         char lv[64];
         bool play = level_check(now, &changed_at, lv, sizeof lv);
         if (!win_start) win_start = now;
-        if (!play || now - changed_at < LOAD_NS) win_load++;
-        else if (win_lines >= LINES_PER_WINDOW) win_busy++;
+        static int all = -1;  // LARECOMP_SLOW_FRAME_ALL=1: loads too, and no limit a minute (loading screen tests)
+        if (all < 0) all = getenv("LARECOMP_SLOW_FRAME_ALL") && atoi(getenv("LARECOMP_SLOW_FRAME_ALL")) != 0;
+        if (!all && (!play || now - changed_at < LOAD_NS)) win_load++;
+        else if (!all && win_lines >= LINES_PER_WINDOW) win_busy++;
         else {
             win_lines++;
             extern uint64_t renderer_present_count(void);

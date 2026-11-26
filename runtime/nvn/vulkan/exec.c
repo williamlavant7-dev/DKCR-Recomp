@@ -6494,14 +6494,20 @@ static void dispatch_compute(uint32_t gx, uint32_t gy, uint32_t gz) {
     CsProg *cp = compute_program(st.program);
     // A compute shader still building is waited for, not skipped: later draws use what it writes. DKCR's title -> file
     // select camera move showed one frame from inside a palm tree (sky black) when the scene's new computes were
-    // skipped. Computes are few and quick from the caches; a first-ever build is a one-time hitch.
-    // LARECOMP_VK_CS_WAIT_MS=<ms> (default 2000; 0: skip as draws do).
+    // skipped; from the caches they are ready within milliseconds. The waits share a budget per frame: a first-ever
+    // build can take seconds (a compute of 1-1's start: 12.6 s on an RTX 3060), and waiting it out froze the level's
+    // start - past the budget it is skipped until ready, as before. LARECOMP_VK_CS_WAIT_MS=<ms> a frame (default 100; 0:
+    // skip at once).
     if (cp && atomic_load(&cp->p.state) == 0) {
-        static int64_t cs_wait = -1;
-        if (cs_wait < 0) cs_wait = (int64_t)((getenv("LARECOMP_VK_CS_WAIT_MS") ? atof(getenv("LARECOMP_VK_CS_WAIT_MS")) : 2000.0) * 1e6);
+        static int64_t cs_wait = -1, spent;
+        static uint64_t frame = ~0ull;
+        if (cs_wait < 0) cs_wait = (int64_t)((getenv("LARECOMP_VK_CS_WAIT_MS") ? atof(getenv("LARECOMP_VK_CS_WAIT_MS")) : 100.0) * 1e6);
+        uint64_t f = renderer_present_count();
+        if (f != frame) frame = f, spent = 0;
         uint64_t t0 = plat_now_ns();
-        while (atomic_load(&cp->p.state) == 0 && (int64_t)(plat_now_ns() - t0) < cs_wait)
+        while (atomic_load(&cp->p.state) == 0 && spent + (int64_t)(plat_now_ns() - t0) < cs_wait)
             plat_sleep_until_ns(plat_now_ns() + 100000);
+        spent += (int64_t)(plat_now_ns() - t0);
     }
     if (!cp || atomic_load(&cp->p.state) != 1) { SKIP_CS(!cp ? SK_NO_STAGES : atomic_load(&cp->p.state) == 2 ? SK_CS_FAILED : SK_CS_BUILDING); return; }
     {   // LARECOMP_SKIP_CS=<code address hex> (debug): skip that compute shader's dispatches, to see what it does
